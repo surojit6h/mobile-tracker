@@ -118,18 +118,53 @@
       // ---- map ----------------------------------------------------------
       const map = L.map("map").setView([20, 0], 2);
 
-      // CARTO Voyager tiles: free (no API key), OSM-based, and much more
-      // detailed than the plain OSM style — buildings, POIs and labels
-      // show up as you zoom in, closer to the Google Maps look.
-      L.tileLayer(
+      // Base layer 1: CARTO Voyager — free (no API key), OSM-based, detailed
+      // street map with buildings, POIs and labels. This is the default.
+      const streets = L.tileLayer(
         "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
         {
-          attribution:
-            '&copy; OpenStreetMap contributors &copy; CARTO',
+          attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
           subdomains: "abcd",
           maxZoom: 20,
         }
-      ).addTo(map);
+      );
+
+      // Base layer 2: Esri World Imagery — free satellite/aerial photos.
+      const satellite = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics",
+          maxZoom: 20,
+        }
+      );
+
+      // A thin labels/roads overlay to put on top of satellite = "Hybrid",
+      // so you get street names over the imagery (like Google's hybrid view).
+      const labels = L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",
+        {
+          attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+          subdomains: "abcd",
+          maxZoom: 20,
+        }
+      );
+      const hybrid = L.layerGroup([satellite, labels]);
+
+      // Start on the detailed street map.
+      streets.addTo(map);
+
+      // Layer switcher in the top-right corner (Map / Satellite / Hybrid).
+      L.control
+        .layers(
+          {
+            Map: streets,
+            Satellite: satellite,
+            Hybrid: hybrid,
+          },
+          null,
+          { position: "topright", collapsed: false }
+        )
+        .addTo(map);
 
       const markers = {}; // deviceId -> L.marker
       const cache = {}; // deviceId -> row
