@@ -140,12 +140,15 @@ class _HomePageState extends State<HomePage> {
     );
 
     // Send one point right away so the dashboard shows the device fast.
-    final first = await Geolocator.getCurrentPosition(
-      locationSettings: settings,
-    );
-    _pendingPosition = first;
-    _lastPosition = first;
-    await _report();
+    // getLastKnownPosition() takes no settings and is stable across
+    // geolocator versions. If there's no cached fix yet, the position
+    // stream above will deliver the first real fix within a few seconds.
+    final first = await Geolocator.getLastKnownPosition();
+    if (first != null) {
+      _pendingPosition = first;
+      _lastPosition = first;
+      await _report();
+    }
 
     setState(() {
       _tracking = true;
