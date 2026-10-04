@@ -11,4 +11,9 @@
 window.APP_CONFIG = {
   SUPABASE_URL: "https://oyxennrwhltlhugnegun.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_1uIwf3z3h1CwdaW-sXQl1A_K3cneAIE",
+
+  // MapTiler key for the detailed, Google-like map styles.
+  // MapTiler Cloud > API Keys. Safe to expose in client code (it's a
+  // public map key). Restrict it to your domain later in MapTiler if you like.
+  MAPTILER_KEY: "gqz3V2e5GO51SIJfqYBz",
 };

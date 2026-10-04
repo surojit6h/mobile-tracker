@@ -120,36 +120,67 @@
       // ---- map ----------------------------------------------------------
       const map = L.map("map").setView([20, 0], 2);
 
-      // Base layer 1: standard OpenStreetMap — genuinely free, no API key,
-      // detailed street map with roads, buildings and labels. Default view.
-      // (CARTO's free raster tiles were retired and now require a key.)
-      const streets = L.tileLayer(
-        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        {
-          attribution: "&copy; OpenStreetMap contributors",
-          maxZoom: 19,
-        }
-      );
+      const mtKey = cfg.MAPTILER_KEY;
+      const hasMapTiler = mtKey && !mtKey.includes("YOUR-");
 
-      // Base layer 2: Esri World Imagery — free satellite/aerial photos.
-      const satellite = L.tileLayer(
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        {
-          attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics",
-          maxZoom: 19,
-        }
-      );
+      let streets, satellite, hybrid;
 
-      // Esri's own free labels/roads layer, placed on top of the imagery to
-      // make a "Hybrid" view (street names over satellite, like Google).
-      const labels = L.tileLayer(
-        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-        {
-          attribution: "Labels &copy; Esri",
-          maxZoom: 19,
-        }
-      );
-      const hybrid = L.layerGroup([satellite, labels]);
+      if (hasMapTiler) {
+        // MapTiler Streets: detailed, polished, Google-Maps-like road map.
+        streets = L.tileLayer(
+          `https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${mtKey}`,
+          {
+            attribution:
+              '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; OpenStreetMap contributors',
+            maxZoom: 20,
+            tileSize: 512,
+            zoomOffset: -1,
+          }
+        );
+
+        // MapTiler Satellite imagery.
+        satellite = L.tileLayer(
+          `https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=${mtKey}`,
+          {
+            attribution:
+              '&copy; <a href="https://www.maptiler.com/">MapTiler</a>',
+            maxZoom: 20,
+            tileSize: 512,
+            zoomOffset: -1,
+          }
+        );
+
+        // MapTiler Hybrid: satellite imagery with road/place labels on top,
+        // just like Google Maps' hybrid view (single ready-made style).
+        hybrid = L.tileLayer(
+          `https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${mtKey}`,
+          {
+            attribution:
+              '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; OpenStreetMap contributors',
+            maxZoom: 20,
+            tileSize: 512,
+            zoomOffset: -1,
+          }
+        );
+      } else {
+        // Fallback (no MapTiler key): plain OpenStreetMap + Esri imagery.
+        streets = L.tileLayer(
+          "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+          { attribution: "&copy; OpenStreetMap contributors", maxZoom: 19 }
+        );
+        satellite = L.tileLayer(
+          "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+          {
+            attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics",
+            maxZoom: 19,
+          }
+        );
+        const labels = L.tileLayer(
+          "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+          { attribution: "Labels &copy; Esri", maxZoom: 19 }
+        );
+        hybrid = L.layerGroup([satellite, labels]);
+      }
 
       // Start on the detailed street map.
       streets.addTo(map);
