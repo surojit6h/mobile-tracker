@@ -63,7 +63,8 @@
         position: absolute;
         top: 12px;
         left: 12px;
-        z-index: 1000;
+        /* Above Leaflet controls (zoom/layers sit at z-index 400-1000). */
+        z-index: 1200;
         width: 40px;
         height: 40px;
         border: none;
@@ -78,8 +79,9 @@
         justify-content: center;
         transition: left 0.25s ease;
       }
-      /* Move the button to the sidebar edge when open, to the corner when closed. */
-      #app:not(.collapsed) #toggle { left: 292px; }
+      /* When the sidebar is open, sit the button just inside its right edge
+         so it never hides behind the sidebar or the map zoom controls. */
+      #app:not(.collapsed) #toggle { left: 228px; }
       #toggle:hover { background: #1b2129; }
     </style>
   </head>
@@ -118,14 +120,14 @@
       // ---- map ----------------------------------------------------------
       const map = L.map("map").setView([20, 0], 2);
 
-      // Base layer 1: CARTO Voyager — free (no API key), OSM-based, detailed
-      // street map with buildings, POIs and labels. This is the default.
+      // Base layer 1: standard OpenStreetMap — genuinely free, no API key,
+      // detailed street map with roads, buildings and labels. Default view.
+      // (CARTO's free raster tiles were retired and now require a key.)
       const streets = L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         {
-          attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
-          subdomains: "abcd",
-          maxZoom: 20,
+          attribution: "&copy; OpenStreetMap contributors",
+          maxZoom: 19,
         }
       );
 
@@ -134,18 +136,17 @@
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         {
           attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics",
-          maxZoom: 20,
+          maxZoom: 19,
         }
       );
 
-      // A thin labels/roads overlay to put on top of satellite = "Hybrid",
-      // so you get street names over the imagery (like Google's hybrid view).
+      // Esri's own free labels/roads layer, placed on top of the imagery to
+      // make a "Hybrid" view (street names over satellite, like Google).
       const labels = L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
         {
-          attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
-          subdomains: "abcd",
-          maxZoom: 20,
+          attribution: "Labels &copy; Esri",
+          maxZoom: 19,
         }
       );
       const hybrid = L.layerGroup([satellite, labels]);
