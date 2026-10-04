@@ -39,9 +39,12 @@ flutter:
 # Regenerate icons with:  dart run flutter_launcher_icons
 flutter_launcher_icons:
   android: true
-  ios: true
+  # iOS is disabled here because the cloud build only generates the Android
+  # project (flutter create --platforms=android), so the iOS icon folders
+  # don't exist on the runner. When you build iOS on a Mac, set this to true
+  # after running `flutter create . --platforms=ios` so the folders exist.
+  ios: false
   image_path: "assets/icon.png"
   # Adaptive icon for modern Android (foreground pin on blue background).
   adaptive_icon_background: "#3B82F6"
   adaptive_icon_foreground: "assets/icon.png"
-  remove_alpha_ios: true
