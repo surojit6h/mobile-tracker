@@ -219,3 +219,62 @@ The Dart code is identical for both platforms — only this build step needs a M
   `supabase/setup.sql`.
 - **`flutter` not recognized** — Flutter isn't installed or not on PATH. See
   Step 3.
+
+---
+
+## Cloud build — get the APK without installing Flutter
+
+This repo includes a GitHub Actions workflow (`.github/workflows/build-apk.yml`)
+that builds the release APK on GitHub's servers. You don't need Flutter or the
+Android SDK on your PC.
+
+The git repo is already initialized with a first commit. To build:
+
+### 1. Create an empty repo on GitHub
+- Go to https://github.com/new
+- Name it e.g. `mobile-tracker`
+- **Do not** add a README, .gitignore, or license (the repo already has them)
+- Click **Create repository**
+
+### 2. Push this project to it
+Copy the repo URL GitHub shows you, then run (replace the URL):
+
+```powershell
+cd "D:\Mobile tracking system"
+git remote add origin https://github.com/YOUR-USERNAME/mobile-tracker.git
+git push -u origin main
+```
+
+GitHub will ask you to sign in (a browser window or a token prompt).
+
+### 3. Watch the build
+- On your repo page, open the **Actions** tab.
+- The **Build Android APK** workflow starts automatically on push.
+- Wait for the green check (first run ~5-10 min while it downloads Flutter).
+
+### 4. Download the APK
+- Click the finished workflow run.
+- Under **Artifacts**, download **mobile-tracker-apk**.
+- Unzip it to get `app-release.apk`.
+- Copy that to your Android phone and install (allow "install from unknown
+  sources" if asked).
+
+### App icon
+The app ships a custom launcher icon (a white location pin on a blue
+background) at `app/assets/icon.png`. The CI build runs
+`flutter_launcher_icons` automatically, so the installed APK shows this icon
+instead of the default Flutter logo.
+
+To change the icon: replace `app/assets/icon.png` with your own 1024x1024 PNG
+(or edit `app/tool/make_icon.py` and run `python app/tool/make_icon.py`), then
+push. The next build picks it up.
+
+### Re-building later
+Any time you change the app and run `git push`, a fresh APK builds
+automatically. You can also trigger it manually: **Actions → Build Android APK →
+Run workflow**.
+
+> Note: your Supabase keys are committed in `app/lib/config.dart` and
+> `dashboard/config.js`. The publishable key is safe to expose while RLS is on.
+> If you'd rather keep the repo private, choose "Private" when creating it in
+> step 1.

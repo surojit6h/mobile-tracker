@@ -29,5 +29,19 @@ dependencies:
 dev_dependencies:
   flutter_lints: ^4.0.0
 
+  # Generates the launcher icon (app icon) for all Android sizes.
+  flutter_launcher_icons: ^0.13.1
+
 flutter:
   uses-material-design: true
+
+# App launcher icon config. Source image: assets/icon.png (a location pin).
+# Regenerate icons with:  dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon.png"
+  # Adaptive icon for modern Android (foreground pin on blue background).
+  adaptive_icon_background: "#3B82F6"
+  adaptive_icon_foreground: "assets/icon.png"
+  remove_alpha_ios: true
