@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  iOS location usage strings.
+  When you create the iOS project (flutter create .), MERGE these keys into
+  ios/Runner/Info.plist inside the top-level <dict>. iOS refuses to ask for
+  location without them.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>This app shares your location with your tracking dashboard while tracking is on.</string>
+
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>This app shares your location with your tracking dashboard while tracking is on.</string>
+</dict>
+</plist>

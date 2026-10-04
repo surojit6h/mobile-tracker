@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mobile Tracker Dashboard</title>
+
+    <!-- Leaflet (free, no API key) -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Supabase JS client (pinned: new sb_publishable_ keys need a recent version) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0"></script>
+
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+      #app { display: flex; height: 100%; }
+      #sidebar {
+        width: 280px;
+        background: #11161c;
+        color: #e6edf3;
+        padding: 16px;
+        overflow-y: auto;
+      }
+      #sidebar h1 { font-size: 18px; margin: 0 0 4px; }
+      #sidebar .sub { font-size: 12px; color: #8b949e; margin-bottom: 16px; }
+      .device {
+        background: #1b2129;
+        border: 1px solid #2a313b;
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+        cursor: pointer;
+      }
+      .device:hover { border-color: #3b82f6; }
+      .device .name { font-weight: 600; }
+      .device .meta { font-size: 12px; color: #8b949e; margin-top: 4px; }
+      .device .batt { color: #3fb950; }
+      #map { flex: 1; }
+      #empty { font-size: 13px; color: #8b949e; }
+      #banner {
+        background: #7d2b2b; color: #fff; padding: 10px 14px;
+        font-size: 13px; display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="banner"></div>
+    <div id="app">
+      <div id="sidebar">
+        <h1>Mobile Tracker</h1>
+        <div class="sub">Live device locations · realtime</div>
+        <div id="list"><div id="empty">Connecting…</div></div>
+      </div>
+      <div id="map"></div>
+    </div>
+
+    <!-- Your Supabase keys live here -->
+    <script src="config.js"></script>
+
+    <script>
+      const cfg = window.APP_CONFIG || {};
+      const banner = document.getElementById("banner");
+
+      function warn(msg) {
+        banner.textContent = msg;
+        banner.style.display = "block";
+      }
+
+      // ---- map ----------------------------------------------------------
+      const map = L.map("map").setView([20, 0], 2);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+        maxZoom: 19,
+      }).addTo(map);
+
+      const markers = {}; // deviceId -> L.marker
+      const cache = {}; // deviceId -> row
+      let firstFit = true;
+
+      function timeAgo(iso) {
+        const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+        if (secs < 60) return secs + "s ago";
+        if (secs < 3600) return Math.floor(secs / 60) + "m ago";
+        return Math.floor(secs / 3600) + "h ago";
+      }
+
+      function render() {
+        const devices = Object.values(cache);
+        const list = document.getElementById("list");
+
+        if (!devices.length) {
+          list.innerHTML = '<div id="empty">No devices reporting yet.</div>';
+        } else {
+          list.innerHTML = "";
+        }
+
+        const bounds = [];
+        devices.forEach((d) => {
+          const popup =
+            `<b>${d.name}</b><br/>` +
+            `Battery: ${d.battery == null ? "?" : d.battery + "%"}<br/>` +
+            `Accuracy: ${d.accuracy == null ? "?" : Math.round(d.accuracy) + " m"}<br/>` +
+            `Updated: ${timeAgo(d.updated_at)}`;
+
+          if (markers[d.device_id]) {
+            markers[d.device_id].setLatLng([d.lat, d.lng]).setPopupContent(popup);
+          } else {
+            markers[d.device_id] = L.marker([d.lat, d.lng])
+              .addTo(map)
+              .bindPopup(popup);
+          }
+          bounds.push([d.lat, d.lng]);
+
+          const card = document.createElement("div");
+          card.className = "device";
+          card.innerHTML =
+            `<div class="name">${d.name}</div>` +
+            `<div class="meta">` +
+            `<span class="batt">${d.battery == null ? "" : "🔋 " + d.battery + "% · "}</span>` +
+            `${timeAgo(d.updated_at)}</div>`;
+          card.onclick = () => {
+            map.setView([d.lat, d.lng], 16);
+            markers[d.device_id].openPopup();
+          };
+          list.appendChild(card);
+        });
+
+        if (firstFit && bounds.length) {
+          map.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+          firstFit = false;
+        }
+      }
+
+      // ---- Supabase -----------------------------------------------------
+      async function start() {
+        if (
+          !cfg.SUPABASE_URL ||
+          cfg.SUPABASE_URL.includes("YOUR-PROJECT") ||
+          !cfg.SUPABASE_ANON_KEY ||
+          cfg.SUPABASE_ANON_KEY.includes("YOUR-ANON")
+        ) {
+          warn("Edit config.js and add your Supabase URL + anon key.");
+          document.getElementById("list").innerHTML =
+            '<div id="empty">Not configured.</div>';
+          return;
+        }
+
+        const supabase = window.supabase.createClient(
+          cfg.SUPABASE_URL,
+          cfg.SUPABASE_ANON_KEY
+        );
+
+        // Initial load.
+        const { data, error } = await supabase.from("devices").select("*");
+        if (error) {
+          warn("Supabase error: " + error.message);
+          return;
+        }
+        data.forEach((row) => (cache[row.device_id] = row));
+        render();
+
+        // Live updates (insert + update).
+        supabase
+          .channel("devices-changes")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "devices" },
+            (payload) => {
+              const row = payload.new;
+              if (row && row.device_id) {
+                cache[row.device_id] = row;
+                render();
+              }
+            }
+          )
+          .subscribe();
+
+        // Refresh the "x ago" labels every 15s even without new data.
+        setInterval(render, 15000);
+      }
+
+      start();
+    </script>
+  </body>
+</html>

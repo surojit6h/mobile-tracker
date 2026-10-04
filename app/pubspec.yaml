@@ -1,0 +1,31 @@
+name: mobile_tracker
+description: A small consent-based location tracker that reports to Supabase.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Battery-friendly location
+  geolocator: ^12.0.0
+
+  # Supabase client
+  # 2.8+ handles the newer sb_publishable_ API key format correctly.
+  supabase_flutter: ^2.8.0
+
+  # Battery level for the dashboard
+  battery_plus: ^6.0.2
+
+  # Stable device id + simple local storage
+  shared_preferences: ^2.2.3
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

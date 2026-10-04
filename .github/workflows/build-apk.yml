@@ -1,0 +1,73 @@
+name: Build Android APK
+
+# Builds the release APK in the cloud. No local Flutter needed.
+# Runs on every push to main, and can be triggered manually from the
+# GitHub "Actions" tab (workflow_dispatch).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java (needed by the Android build)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      # The repo only contains lib/, pubspec.yaml and our custom
+      # Android manifest. We back up the files we care about, let
+      # `flutter create` generate the rest of the native project,
+      # then restore our files on top.
+      - name: Back up custom files
+        working-directory: app
+        run: |
+          mkdir -p ../_backup
+          cp pubspec.yaml ../_backup/pubspec.yaml
+          if [ -f android/app/src/main/AndroidManifest.xml ]; then
+            cp android/app/src/main/AndroidManifest.xml ../_backup/AndroidManifest.xml
+          fi
+
+      - name: Generate native project scaffolding
+        working-directory: app
+        run: flutter create . --platforms=android --project-name mobile_tracker
+
+      - name: Restore custom files
+        working-directory: app
+        run: |
+          cp ../_backup/pubspec.yaml pubspec.yaml
+          if [ -f ../_backup/AndroidManifest.xml ]; then
+            cp ../_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          fi
+
+      - name: Get dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: app
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-tracker-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
