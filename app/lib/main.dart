@@ -4,7 +4,6 @@ import 'dart:ui';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -12,9 +11,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config.dart';
 
 // Android notification channel used by the foreground service. The ongoing
-// notification is mandatory for a location foreground service.
+// notification is mandatory for a location foreground service. The plugin
+// creates this channel from the AndroidConfiguration below.
 const String _notifChannelId = 'tracker_foreground';
-const String _notifChannelName = 'Location tracking';
 const int _notifId = 7312;
 
 Future<void> main() async {
@@ -36,19 +35,6 @@ Future<void> main() async {
 
 Future<void> _initBackgroundService() async {
   final service = FlutterBackgroundService();
-
-  // Create the Android notification channel the foreground service uses.
-  final notifications = FlutterLocalNotificationsPlugin();
-  const androidChannel = AndroidNotificationChannel(
-    _notifChannelId,
-    _notifChannelName,
-    description: 'Shows while your location is being shared.',
-    importance: Importance.low, // low = quiet, no sound/vibration
-  );
-  await notifications
-      .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(androidChannel);
 
   await service.configure(
     androidConfiguration: AndroidConfiguration(
@@ -94,7 +80,6 @@ Future<void> onStart(ServiceInstance service) async {
   final deviceName = prefs.getString('device_name') ?? 'My device';
 
   final battery = Battery();
-  final notifications = FlutterLocalNotificationsPlugin();
 
   Position? pending;
 
@@ -151,24 +136,14 @@ Future<void> onStart(ServiceInstance service) async {
 
       final time = TimeOfDay.fromDateTime(DateTime.now()).format24();
       // Update the ongoing foreground-service notification so the user can
-      // see it's working. Reusing _notifId keeps it as the single ongoing
-      // notification rather than stacking new ones.
+      // see it's working. The plugin manages the single ongoing notification.
       if (service is AndroidServiceInstance &&
           await service.isForegroundService()) {
-        await notifications.show(
-          _notifId,
-          'Mobile Tracker — sharing location',
-          'Last report $time '
+        service.setForegroundNotificationInfo(
+          title: 'Mobile Tracker — sharing location',
+          content: 'Last report $time '
               '(${pos.latitude.toStringAsFixed(4)}, '
               '${pos.longitude.toStringAsFixed(4)})',
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              _notifChannelId,
-              _notifChannelName,
-              icon: 'ic_bg_service_small',
-              ongoing: true,
-            ),
-          ),
         );
       }
       // Tell the UI (if open) about the latest report.
