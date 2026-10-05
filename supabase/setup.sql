@@ -14,6 +14,7 @@ create table if not exists public.devices (
     lng         double precision not null,
     battery     integer,
     accuracy    double precision,
+    speed       double precision,          -- km/h from GPS (nullable)
     updated_at  timestamptz not null default now()
 );
 
@@ -73,6 +74,7 @@ create table if not exists public.locations (
     lng         double precision not null,
     battery     integer,
     accuracy    double precision,
+    speed       double precision,          -- km/h from GPS (nullable)
     recorded_at timestamptz not null default now()
 );
 
@@ -146,6 +148,16 @@ select cron.schedule(
     '30 3 * * *',                      -- every day at 03:30 UTC
     $$ select public.cleanup_old_locations(); $$
 );
+
+-- =====================================================================
+-- 7) Migration: add the `speed` column to existing installations.
+--    Safe to re-run on a brand-new project too (IF NOT EXISTS guard).
+-- =====================================================================
+alter table if exists public.devices
+    add column if not exists speed double precision;   -- km/h, nullable
+
+alter table if exists public.locations
+    add column if not exists speed double precision;   -- km/h, nullable
 
 -- =====================================================================
 -- SECURITY NOTE

@@ -6,108 +6,198 @@
     <title>Mobile Tracker Dashboard</title>
 
     <!-- Leaflet (free, no API key) -->
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- Supabase JS client (pinned: new sb_publishable_ keys need a recent version) -->
+    <!-- Supabase JS client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0"></script>
 
     <style>
-      * { box-sizing: border-box; }
-      html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; }
       #app { display: flex; height: 100%; position: relative; }
 
-      /* ---- sidebar (collapsible) ---- */
+      /* ---- sidebar ---- */
       #sidebar {
-        width: 280px;
-        flex: 0 0 280px;
+        width: 290px;
+        flex: 0 0 290px;
         background: #11161c;
         color: #e6edf3;
-        padding: 16px;
-        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
         transition: margin-left 0.25s ease;
       }
-      /* When collapsed, slide the whole sidebar off to the left. */
-      #app.collapsed #sidebar {
-        margin-left: -280px;
-      }
-      #sidebar h1 { font-size: 18px; margin: 0 0 4px; }
-      #sidebar .sub { font-size: 12px; color: #8b949e; margin-bottom: 16px; }
+      #app.collapsed #sidebar { margin-left: -290px; }
 
+      #sidebar-header {
+        padding: 16px 16px 10px;
+        border-bottom: 1px solid #21262d;
+        flex-shrink: 0;
+      }
+      #sidebar-header h1 { font-size: 18px; font-weight: 700; }
+      #sidebar-header .sub { font-size: 12px; color: #8b949e; margin-top: 3px; }
+      #device-summary { font-size: 11px; color: #8b949e; margin-top: 6px; }
+
+      /* search box */
+      #search-wrap {
+        padding: 10px 16px;
+        border-bottom: 1px solid #21262d;
+        flex-shrink: 0;
+      }
+      #search {
+        width: 100%;
+        background: #161b22;
+        border: 1px solid #2a313b;
+        border-radius: 8px;
+        color: #e6edf3;
+        padding: 7px 10px 7px 32px;
+        font-size: 13px;
+        outline: none;
+      }
+      #search:focus { border-color: #3b82f6; }
+      #search-wrap { position: relative; }
+      #search-icon {
+        position: absolute;
+        left: 26px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #8b949e;
+        font-size: 14px;
+        pointer-events: none;
+      }
+
+      /* device list */
+      #list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px 12px 16px;
+      }
+      #list::-webkit-scrollbar { width: 6px; }
+      #list::-webkit-scrollbar-track { background: transparent; }
+      #list::-webkit-scrollbar-thumb { background: #2a313b; border-radius: 3px; }
+
+      #empty { font-size: 13px; color: #8b949e; padding: 8px 4px; }
+
+      /* device cards */
       .device {
         background: #1b2129;
         border: 1px solid #2a313b;
-        border-radius: 8px;
-        padding: 10px 12px;
-        margin-bottom: 10px;
+        border-radius: 10px;
+        padding: 11px 12px;
+        margin-bottom: 9px;
         cursor: pointer;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        border-left-width: 3px;
       }
-      .device:hover { border-color: #3b82f6; }
-      .device .name { font-weight: 600; }
-      .device .meta { font-size: 12px; color: #8b949e; margin-top: 4px; }
-      .device .batt { color: #3fb950; }
-      .device .clear-btn {
-        margin-top: 8px;
-        padding: 4px 10px;
-        font-size: 12px;
-        color: #f0b4b4;
-        background: #2a1b1b;
-        border: 1px solid #4a2b2b;
-        border-radius: 6px;
-        cursor: pointer;
-      }
-      .device .clear-btn:hover {
-        background: #3a2222;
-        border-color: #7d2b2b;
-        color: #ffd4d4;
-      }
+      .device:hover { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f630; }
+      .device.selected { border-color: #3b82f6; background: #192135; }
 
-      #map { flex: 1; }
-      #empty { font-size: 13px; color: #8b949e; }
+      /* staleness left-border colours */
+      .device.fresh  { border-left-color: #3fb950; }
+      .device.stale  { border-left-color: #f0883e; }
+      .device.offline { border-left-color: #f85149; }
 
-      #banner {
-        background: #7d2b2b; color: #fff; padding: 10px 14px;
-        font-size: 13px; display: none;
-      }
-
-      /* ---- sidebar toggle button (floats over the map) ---- */
-      #toggle {
-        position: absolute;
-        top: 12px;
-        left: 12px;
-        /* Above Leaflet controls (zoom/layers sit at z-index 400-1000). */
-        z-index: 1200;
-        width: 40px;
-        height: 40px;
-        border: none;
-        border-radius: 8px;
-        background: #11161c;
-        color: #e6edf3;
-        font-size: 18px;
-        cursor: pointer;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      .device-header {
         display: flex;
         align-items: center;
-        justify-content: center;
+        justify-content: space-between;
+        margin-bottom: 5px;
+      }
+      .device .name { font-weight: 600; font-size: 14px; }
+
+      /* staleness dot */
+      .stale-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        margin-left: 6px;
+      }
+      .device.fresh  .stale-dot { background: #3fb950; }
+      .device.stale  .stale-dot { background: #f0883e; box-shadow: 0 0 5px #f0883e80; }
+      .device.offline .stale-dot { background: #f85149; box-shadow: 0 0 5px #f8514980; }
+
+      .device .meta { font-size: 12px; color: #8b949e; line-height: 1.5; }
+      .device .meta .batt { color: #3fb950; }
+      .device .meta .spd  { color: #60a5fa; }
+
+      /* action buttons row */
+      .device-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 9px;
+        flex-wrap: wrap;
+      }
+      .action-btn {
+        padding: 4px 10px;
+        font-size: 11px;
+        border-radius: 6px;
+        cursor: pointer;
+        border: 1px solid;
+        background: transparent;
+        transition: background 0.15s, color 0.15s;
+        white-space: nowrap;
+      }
+      .btn-csv { color: #79c0ff; border-color: #1f4a7a; }
+      .btn-csv:hover { background: #1f4a7a; }
+      .btn-gpx { color: #56d364; border-color: #1a4a2a; }
+      .btn-gpx:hover { background: #1a4a2a; }
+      .btn-clear { color: #f0b4b4; border-color: #4a2b2b; }
+      .btn-clear:hover { background: #3a2222; color: #ffd4d4; }
+
+      /* map */
+      #map { flex: 1; }
+
+      /* banner */
+      #banner {
+        background: #7d2b2b; color: #fff;
+        padding: 10px 14px; font-size: 13px; display: none;
+      }
+
+      /* sidebar toggle */
+      #toggle {
+        position: absolute;
+        top: 12px; left: 12px;
+        z-index: 1200;
+        width: 40px; height: 40px;
+        border: none; border-radius: 8px;
+        background: #11161c; color: #e6edf3;
+        font-size: 18px; cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        display: flex; align-items: center; justify-content: center;
         transition: left 0.25s ease;
       }
-      /* When the sidebar is open, sit the button just inside its right edge
-         so it never hides behind the sidebar or the map zoom controls. */
-      #app:not(.collapsed) #toggle { left: 228px; }
+      #app:not(.collapsed) #toggle { left: 238px; }
       #toggle:hover { background: #1b2129; }
+
+      /* offline stale alert in sidebar */
+      #stale-alert {
+        background: #2a1b0a;
+        border-top: 1px solid #4a3010;
+        padding: 8px 14px;
+        font-size: 11px;
+        color: #f0883e;
+        display: none;
+        flex-shrink: 0;
+      }
     </style>
   </head>
   <body>
     <div id="banner"></div>
     <div id="app">
-      <button id="toggle" title="Show/hide panel">☰</button>
+      <button id="toggle" title="Show/hide panel">&#9776;</button>
       <div id="sidebar">
-        <h1>Mobile Tracker</h1>
-        <div class="sub">Live device locations · realtime</div>
-        <div id="list"><div id="empty">Connecting…</div></div>
+        <div id="sidebar-header">
+          <h1>Mobile Tracker</h1>
+          <div class="sub">Live device locations &middot; realtime</div>
+          <div id="device-summary"></div>
+        </div>
+        <div id="search-wrap">
+          <span id="search-icon">&#128269;</span>
+          <input id="search" type="text" placeholder="Search devices&hellip;" autocomplete="off" />
+        </div>
+        <div id="list"><div id="empty">Connecting&hellip;</div></div>
+        <div id="stale-alert">&#9888; One or more devices may be offline (no update &gt;15 min).</div>
       </div>
       <div id="map"></div>
     </div>
@@ -124,15 +214,21 @@
         banner.style.display = "block";
       }
 
-      // ---- sidebar toggle ----------------------------------------------
+      // ---- sidebar toggle ------------------------------------------------
       const appEl = document.getElementById("app");
       document.getElementById("toggle").addEventListener("click", () => {
         appEl.classList.toggle("collapsed");
-        // Leaflet needs to recompute size after the map area resizes.
         setTimeout(() => map.invalidateSize(), 300);
       });
 
-      // ---- map ----------------------------------------------------------
+      // ---- search filter -------------------------------------------------
+      let searchQuery = "";
+      document.getElementById("search").addEventListener("input", (e) => {
+        searchQuery = e.target.value.toLowerCase().trim();
+        render();
+      });
+
+      // ---- map -----------------------------------------------------------
       const map = L.map("map").setView([20, 0], 2);
 
       const mtKey = cfg.MAPTILER_KEY;
@@ -141,90 +237,45 @@
       let streets, satellite, hybrid;
 
       if (hasMapTiler) {
-        // MapTiler Streets: detailed, polished, Google-Maps-like road map.
         streets = L.tileLayer(
           `https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${mtKey}`,
-          {
-            attribution:
-              '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; OpenStreetMap contributors',
-            maxZoom: 20,
-            tileSize: 512,
-            zoomOffset: -1,
-          }
+          { attribution: "&copy; <a href='https://www.maptiler.com/'>MapTiler</a> &copy; OSM contributors", maxZoom: 20, tileSize: 512, zoomOffset: -1 }
         );
-
-        // MapTiler Satellite imagery.
         satellite = L.tileLayer(
           `https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=${mtKey}`,
-          {
-            attribution:
-              '&copy; <a href="https://www.maptiler.com/">MapTiler</a>',
-            maxZoom: 20,
-            tileSize: 512,
-            zoomOffset: -1,
-          }
+          { attribution: "&copy; <a href='https://www.maptiler.com/'>MapTiler</a>", maxZoom: 20, tileSize: 512, zoomOffset: -1 }
         );
-
-        // MapTiler Hybrid: satellite imagery with road/place labels on top,
-        // just like Google Maps' hybrid view (single ready-made style).
         hybrid = L.tileLayer(
           `https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${mtKey}`,
-          {
-            attribution:
-              '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; OpenStreetMap contributors',
-            maxZoom: 20,
-            tileSize: 512,
-            zoomOffset: -1,
-          }
+          { attribution: "&copy; <a href='https://www.maptiler.com/'>MapTiler</a> &copy; OSM contributors", maxZoom: 20, tileSize: 512, zoomOffset: -1 }
         );
       } else {
-        // Fallback (no MapTiler key): plain OpenStreetMap + Esri imagery.
-        streets = L.tileLayer(
-          "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-          { attribution: "&copy; OpenStreetMap contributors", maxZoom: 19 }
-        );
+        streets = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+          { attribution: "&copy; OpenStreetMap contributors", maxZoom: 19 });
         satellite = L.tileLayer(
           "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-          {
-            attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics",
-            maxZoom: 19,
-          }
-        );
+          { attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics", maxZoom: 19 });
         const labels = L.tileLayer(
           "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-          { attribution: "Labels &copy; Esri", maxZoom: 19 }
-        );
+          { attribution: "Labels &copy; Esri", maxZoom: 19 });
         hybrid = L.layerGroup([satellite, labels]);
       }
 
-      // Start on the detailed street map.
       streets.addTo(map);
+      L.control.layers({ Map: streets, Satellite: satellite, Hybrid: hybrid },
+        null, { position: "topright", collapsed: false }).addTo(map);
 
-      // Layer switcher in the top-right corner (Map / Satellite / Hybrid).
-      L.control
-        .layers(
-          {
-            Map: streets,
-            Satellite: satellite,
-            Hybrid: hybrid,
-          },
-          null,
-          { position: "topright", collapsed: false }
-        )
-        .addTo(map);
-
-      const markers = {}; // deviceId -> L.marker
-      const cache = {}; // deviceId -> row
+      const markers = {};
+      const cache = {};
       let firstFit = true;
 
-      // ---- travel path (trail) state -----------------------------------
-      let supabaseClient = null; // set in start()
-      let pathLine = null; // the drawn polyline
-      let pathDots = null; // small dots at each recorded point
-      let selectedDevice = null; // device_id whose path is shown
-      const PATH_LIMIT = 500; // most-recent points to draw
+      // ---- travel path state --------------------------------------------
+      let supabaseClient = null;
+      let pathLine = null;
+      let pathDots = null;
+      let selectedDevice = null;
+      const PATH_LIMIT = 500;
 
-      // Load a device's recent history and draw it as a line on the map.
       async function showPath(deviceId) {
         if (!supabaseClient) return;
         selectedDevice = deviceId;
@@ -236,13 +287,9 @@
           .order("recorded_at", { ascending: true })
           .limit(PATH_LIMIT);
 
-        if (error) {
-          warn("Could not load path: " + error.message);
-          return;
-        }
-
-        const points = (data || []).map((r) => [r.lat, r.lng]);
-        drawPath(points);
+        if (error) { warn("Could not load path: " + error.message); return; }
+        drawPath((data || []).map((r) => [r.lat, r.lng]));
+        render(); // refresh selected highlight
       }
 
       function drawPath(points) {
@@ -250,109 +297,196 @@
         if (pathDots) { map.removeLayer(pathDots); pathDots = null; }
         if (!points.length) return;
 
-        pathLine = L.polyline(points, {
-          color: "#3b82f6",
-          weight: 4,
-          opacity: 0.85,
-        }).addTo(map);
-
-        // Small dots mark each individual report along the trail.
+        pathLine = L.polyline(points, { color: "#3b82f6", weight: 4, opacity: 0.85 }).addTo(map);
         pathDots = L.layerGroup(
-          points.map((p) =>
-            L.circleMarker(p, {
-              radius: 3,
-              color: "#1d4ed8",
-              fillColor: "#60a5fa",
-              fillOpacity: 1,
-              weight: 1,
-            })
-          )
+          points.map((p) => L.circleMarker(p, {
+            radius: 3, color: "#1d4ed8", fillColor: "#60a5fa", fillOpacity: 1, weight: 1
+          }))
         ).addTo(map);
-
         map.fitBounds(pathLine.getBounds(), { padding: [50, 50], maxZoom: 17 });
       }
 
-      // Delete all stored history for a device, then clear the drawn path.
       async function clearHistory(deviceId, deviceName) {
         if (!supabaseClient) return;
         const ok = window.confirm(
           `Delete all saved travel history for "${deviceName}"?\n` +
-            "This cannot be undone. The live marker stays; only the trail is removed."
+          "This cannot be undone. The live marker stays; only the trail is removed."
         );
         if (!ok) return;
 
         const { error } = await supabaseClient
+          .from("locations").delete().eq("device_id", deviceId);
+        if (error) { warn("Could not clear history: " + error.message); return; }
+
+        if (selectedDevice === deviceId) { drawPath([]); selectedDevice = null; }
+        render();
+      }
+
+      // ---- export helpers -----------------------------------------------
+      async function exportCSV(deviceId, deviceName) {
+        if (!supabaseClient) return;
+        const { data, error } = await supabaseClient
           .from("locations")
-          .delete()
-          .eq("device_id", deviceId);
+          .select("recorded_at,lat,lng,accuracy,speed,battery")
+          .eq("device_id", deviceId)
+          .order("recorded_at", { ascending: true });
+        if (error) { warn("Export failed: " + error.message); return; }
 
-        if (error) {
-          warn("Could not clear history: " + error.message);
-          return;
-        }
+        const header = "timestamp,latitude,longitude,accuracy_m,speed_kmh,battery_pct\n";
+        const rows = (data || []).map((r) =>
+          `${r.recorded_at},${r.lat},${r.lng},` +
+          `${r.accuracy != null ? r.accuracy.toFixed(1) : ""},` +
+          `${r.speed != null ? r.speed.toFixed(2) : ""},` +
+          `${r.battery != null ? r.battery : ""}`
+        ).join("\n");
 
-        // If this device's path is currently shown, remove it from the map.
-        if (selectedDevice === deviceId) {
-          drawPath([]);
-          selectedDevice = null;
-        }
+        download(header + rows, deviceName.replace(/\s+/g, "_") + "_trail.csv", "text/csv");
+      }
+
+      async function exportGPX(deviceId, deviceName) {
+        if (!supabaseClient) return;
+        const { data, error } = await supabaseClient
+          .from("locations")
+          .select("recorded_at,lat,lng,accuracy,speed")
+          .eq("device_id", deviceId)
+          .order("recorded_at", { ascending: true });
+        if (error) { warn("Export failed: " + error.message); return; }
+
+        const pts = (data || []).map((r) => {
+          const hdop = r.accuracy != null ? `\n        <hdop>${(r.accuracy / 5).toFixed(1)}</hdop>` : "";
+          const spd  = r.speed   != null ? `\n        <extensions><speed>${r.speed.toFixed(2)}</speed></extensions>` : "";
+          return `    <trkpt lat="${r.lat}" lon="${r.lng}">\n      <time>${r.recorded_at}</time>${hdop}${spd}\n    </trkpt>`;
+        }).join("\n");
+
+        const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="MobileTracker" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>${deviceName}</name>
+    <trkseg>
+${pts}
+    </trkseg>
+  </trk>
+</gpx>`;
+        download(gpx, deviceName.replace(/\s+/g, "_") + "_trail.gpx", "application/gpx+xml");
+      }
+
+      function download(text, filename, type) {
+        const blob = new Blob([text], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+
+      // ---- staleness helpers --------------------------------------------
+      function secsSince(iso) {
+        return Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+      }
+
+      function staleClass(iso) {
+        const s = secsSince(iso);
+        if (s < 300)  return "fresh";   // < 5 min
+        if (s < 900)  return "stale";   // 5 – 15 min
+        return "offline";               // > 15 min
       }
 
       function timeAgo(iso) {
-        const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-        if (secs < 60) return secs + "s ago";
-        if (secs < 3600) return Math.floor(secs / 60) + "m ago";
-        return Math.floor(secs / 3600) + "h ago";
+        const s = secsSince(iso);
+        if (s < 60)   return s + "s ago";
+        if (s < 3600) return Math.floor(s / 60) + "m ago";
+        return Math.floor(s / 3600) + "h ago";
       }
 
+      // ---- render -------------------------------------------------------
       function render() {
-        const devices = Object.values(cache);
+        const allDevices = Object.values(cache);
+        const devices = searchQuery
+          ? allDevices.filter((d) => d.name.toLowerCase().includes(searchQuery))
+          : allDevices;
+
         const list = document.getElementById("list");
+        list.innerHTML = "";
+
+        // summary line
+        const onlineCount = allDevices.filter((d) => secsSince(d.updated_at) < 900).length;
+        document.getElementById("device-summary").textContent =
+          allDevices.length
+            ? `${allDevices.length} device${allDevices.length > 1 ? "s" : ""} · ${onlineCount} online`
+            : "";
+
+        // stale alert
+        const hasOffline = allDevices.some((d) => secsSince(d.updated_at) >= 900);
+        document.getElementById("stale-alert").style.display = hasOffline ? "block" : "none";
 
         if (!devices.length) {
-          list.innerHTML = '<div id="empty">No devices reporting yet.</div>';
-        } else {
-          list.innerHTML = "";
+          list.innerHTML = `<div id="empty">${
+            searchQuery ? "No devices match your search." : "No devices reporting yet."
+          }</div>`;
         }
 
         const bounds = [];
+
         devices.forEach((d) => {
           const popup =
             `<b>${d.name}</b><br/>` +
             `Battery: ${d.battery == null ? "?" : d.battery + "%"}<br/>` +
+            `Speed: ${d.speed == null ? "?" : d.speed.toFixed(1) + " km/h"}<br/>` +
             `Accuracy: ${d.accuracy == null ? "?" : Math.round(d.accuracy) + " m"}<br/>` +
             `Updated: ${timeAgo(d.updated_at)}`;
 
           if (markers[d.device_id]) {
             markers[d.device_id].setLatLng([d.lat, d.lng]).setPopupContent(popup);
           } else {
-            markers[d.device_id] = L.marker([d.lat, d.lng])
-              .addTo(map)
-              .bindPopup(popup);
+            markers[d.device_id] = L.marker([d.lat, d.lng]).addTo(map).bindPopup(popup);
           }
           bounds.push([d.lat, d.lng]);
 
-          const card = document.createElement("div");
-          card.className = "device";
-          card.innerHTML =
-            `<div class="name">${d.name}</div>` +
-            `<div class="meta">` +
-            `<span class="batt">${d.battery == null ? "" : "🔋 " + d.battery + "% · "}</span>` +
-            `${timeAgo(d.updated_at)}</div>` +
-            `<button class="clear-btn" title="Delete this device's travel history">Clear history</button>`;
+          const sc = staleClass(d.updated_at);
+          const isSelected = selectedDevice === d.device_id;
 
-          // Clicking the card body shows the path.
-          card.onclick = () => {
+          const card = document.createElement("div");
+          card.className = `device ${sc}${isSelected ? " selected" : ""}`;
+
+          const battHtml = d.battery != null
+            ? `<span class="batt">&#128267; ${d.battery}%</span> &middot; `
+            : "";
+          const spdHtml = d.speed != null
+            ? `<span class="spd">&#128663; ${d.speed.toFixed(1)} km/h</span> &middot; `
+            : "";
+
+          card.innerHTML =
+            `<div class="device-header">` +
+              `<div class="name">${d.name}</div>` +
+              `<span class="stale-dot" title="${timeAgo(d.updated_at)}"></span>` +
+            `</div>` +
+            `<div class="meta">${battHtml}${spdHtml}${timeAgo(d.updated_at)}</div>` +
+            `<div class="device-actions">` +
+              `<button class="action-btn btn-csv" title="Export trail as CSV">&#128196; CSV</button>` +
+              `<button class="action-btn btn-gpx" title="Export trail as GPX (Google Earth, Strava, etc.)">&#128205; GPX</button>` +
+              `<button class="action-btn btn-clear" title="Delete this device's travel history">&#128465; Clear</button>` +
+            `</div>`;
+
+          // Click card body -> show path
+          card.addEventListener("click", (e) => {
+            if (e.target.closest(".action-btn")) return;
             markers[d.device_id].openPopup();
             showPath(d.device_id);
-          };
+          });
 
-          // Clicking the button deletes history. stopPropagation keeps it
-          // from also firing the card's "show path" handler above.
-          card.querySelector(".clear-btn").onclick = (e) => {
+          card.querySelector(".btn-csv").addEventListener("click", (e) => {
+            e.stopPropagation();
+            exportCSV(d.device_id, d.name);
+          });
+
+          card.querySelector(".btn-gpx").addEventListener("click", (e) => {
+            e.stopPropagation();
+            exportGPX(d.device_id, d.name);
+          });
+
+          card.querySelector(".btn-clear").addEventListener("click", (e) => {
             e.stopPropagation();
             clearHistory(d.device_id, d.name);
-          };
+          });
 
           list.appendChild(card);
         });
@@ -372,59 +506,41 @@
           cfg.SUPABASE_ANON_KEY.includes("YOUR-ANON")
         ) {
           warn("Edit config.js and add your Supabase URL + anon key.");
-          document.getElementById("list").innerHTML =
-            '<div id="empty">Not configured.</div>';
+          document.getElementById("list").innerHTML = '<div id="empty">Not configured.</div>';
           return;
         }
 
-        const supabase = window.supabase.createClient(
-          cfg.SUPABASE_URL,
-          cfg.SUPABASE_ANON_KEY
-        );
-        supabaseClient = supabase; // used by showPath()
+        const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+        supabaseClient = supabase;
 
-        // Initial load.
         const { data, error } = await supabase.from("devices").select("*");
-        if (error) {
-          warn("Supabase error: " + error.message);
-          return;
-        }
+        if (error) { warn("Supabase error: " + error.message); return; }
         data.forEach((row) => (cache[row.device_id] = row));
         render();
 
-        // Live updates (insert + update) to the latest-position table.
+        // Live updates to current-position table
         supabase
           .channel("devices-changes")
-          .on(
-            "postgres_changes",
-            { event: "*", schema: "public", table: "devices" },
-            (payload) => {
-              const row = payload.new;
-              if (row && row.device_id) {
-                cache[row.device_id] = row;
-                render();
-              }
-            }
-          )
+          .on("postgres_changes",
+              { event: "*", schema: "public", table: "devices" },
+              (payload) => {
+                const row = payload.new;
+                if (row && row.device_id) { cache[row.device_id] = row; render(); }
+              })
           .subscribe();
 
-        // Live history inserts: if the shown device reports a new point,
-        // extend its drawn path in real time (no reload needed).
+        // Live history inserts -> extend path if selected
         supabase
           .channel("locations-changes")
-          .on(
-            "postgres_changes",
-            { event: "INSERT", schema: "public", table: "locations" },
-            (payload) => {
-              const row = payload.new;
-              if (row && row.device_id === selectedDevice) {
-                showPath(selectedDevice);
-              }
-            }
-          )
+          .on("postgres_changes",
+              { event: "INSERT", schema: "public", table: "locations" },
+              (payload) => {
+                const row = payload.new;
+                if (row && row.device_id === selectedDevice) showPath(selectedDevice);
+              })
           .subscribe();
 
-        // Refresh the "x ago" labels every 15s even without new data.
+        // Refresh "x ago" labels and staleness colours every 15s
         setInterval(render, 15000);
       }
 
