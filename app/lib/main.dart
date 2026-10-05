@@ -179,17 +179,32 @@ class _HomePageState extends State<HomePage> {
       batteryLevel = null;
     }
 
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    final name = _nameController.text.trim().isEmpty
+        ? 'My device'
+        : _nameController.text.trim();
+
     try {
+      // 1) Keep the "latest position" row up to date (powers the live marker).
       await Supabase.instance.client.from('devices').upsert({
         'device_id': _deviceId,
-        'name': _nameController.text.trim().isEmpty
-            ? 'My device'
-            : _nameController.text.trim(),
+        'name': name,
         'lat': pos.latitude,
         'lng': pos.longitude,
         'battery': batteryLevel,
         'accuracy': pos.accuracy,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
+        'updated_at': nowIso,
+      });
+
+      // 2) Append this point to history so the dashboard can draw the path.
+      //    Each report is a new row, never overwritten.
+      await Supabase.instance.client.from('locations').insert({
+        'device_id': _deviceId,
+        'lat': pos.latitude,
+        'lng': pos.longitude,
+        'battery': batteryLevel,
+        'accuracy': pos.accuracy,
+        'recorded_at': nowIso,
       });
       setState(() {
         _status = 'Last report: ${TimeOfDay.now().format(context)} '

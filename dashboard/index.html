@@ -49,6 +49,21 @@
       .device .name { font-weight: 600; }
       .device .meta { font-size: 12px; color: #8b949e; margin-top: 4px; }
       .device .batt { color: #3fb950; }
+      .device .clear-btn {
+        margin-top: 8px;
+        padding: 4px 10px;
+        font-size: 12px;
+        color: #f0b4b4;
+        background: #2a1b1b;
+        border: 1px solid #4a2b2b;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .device .clear-btn:hover {
+        background: #3a2222;
+        border-color: #7d2b2b;
+        color: #ffd4d4;
+      }
 
       #map { flex: 1; }
       #empty { font-size: 13px; color: #8b949e; }
@@ -202,6 +217,87 @@
       const cache = {}; // deviceId -> row
       let firstFit = true;
 
+      // ---- travel path (trail) state -----------------------------------
+      let supabaseClient = null; // set in start()
+      let pathLine = null; // the drawn polyline
+      let pathDots = null; // small dots at each recorded point
+      let selectedDevice = null; // device_id whose path is shown
+      const PATH_LIMIT = 500; // most-recent points to draw
+
+      // Load a device's recent history and draw it as a line on the map.
+      async function showPath(deviceId) {
+        if (!supabaseClient) return;
+        selectedDevice = deviceId;
+
+        const { data, error } = await supabaseClient
+          .from("locations")
+          .select("lat,lng,recorded_at")
+          .eq("device_id", deviceId)
+          .order("recorded_at", { ascending: true })
+          .limit(PATH_LIMIT);
+
+        if (error) {
+          warn("Could not load path: " + error.message);
+          return;
+        }
+
+        const points = (data || []).map((r) => [r.lat, r.lng]);
+        drawPath(points);
+      }
+
+      function drawPath(points) {
+        if (pathLine) { map.removeLayer(pathLine); pathLine = null; }
+        if (pathDots) { map.removeLayer(pathDots); pathDots = null; }
+        if (!points.length) return;
+
+        pathLine = L.polyline(points, {
+          color: "#3b82f6",
+          weight: 4,
+          opacity: 0.85,
+        }).addTo(map);
+
+        // Small dots mark each individual report along the trail.
+        pathDots = L.layerGroup(
+          points.map((p) =>
+            L.circleMarker(p, {
+              radius: 3,
+              color: "#1d4ed8",
+              fillColor: "#60a5fa",
+              fillOpacity: 1,
+              weight: 1,
+            })
+          )
+        ).addTo(map);
+
+        map.fitBounds(pathLine.getBounds(), { padding: [50, 50], maxZoom: 17 });
+      }
+
+      // Delete all stored history for a device, then clear the drawn path.
+      async function clearHistory(deviceId, deviceName) {
+        if (!supabaseClient) return;
+        const ok = window.confirm(
+          `Delete all saved travel history for "${deviceName}"?\n` +
+            "This cannot be undone. The live marker stays; only the trail is removed."
+        );
+        if (!ok) return;
+
+        const { error } = await supabaseClient
+          .from("locations")
+          .delete()
+          .eq("device_id", deviceId);
+
+        if (error) {
+          warn("Could not clear history: " + error.message);
+          return;
+        }
+
+        // If this device's path is currently shown, remove it from the map.
+        if (selectedDevice === deviceId) {
+          drawPath([]);
+          selectedDevice = null;
+        }
+      }
+
       function timeAgo(iso) {
         const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
         if (secs < 60) return secs + "s ago";
@@ -242,11 +338,22 @@
             `<div class="name">${d.name}</div>` +
             `<div class="meta">` +
             `<span class="batt">${d.battery == null ? "" : "🔋 " + d.battery + "% · "}</span>` +
-            `${timeAgo(d.updated_at)}</div>`;
+            `${timeAgo(d.updated_at)}</div>` +
+            `<button class="clear-btn" title="Delete this device's travel history">Clear history</button>`;
+
+          // Clicking the card body shows the path.
           card.onclick = () => {
-            map.setView([d.lat, d.lng], 17);
             markers[d.device_id].openPopup();
+            showPath(d.device_id);
           };
+
+          // Clicking the button deletes history. stopPropagation keeps it
+          // from also firing the card's "show path" handler above.
+          card.querySelector(".clear-btn").onclick = (e) => {
+            e.stopPropagation();
+            clearHistory(d.device_id, d.name);
+          };
+
           list.appendChild(card);
         });
 
@@ -274,6 +381,7 @@
           cfg.SUPABASE_URL,
           cfg.SUPABASE_ANON_KEY
         );
+        supabaseClient = supabase; // used by showPath()
 
         // Initial load.
         const { data, error } = await supabase.from("devices").select("*");
@@ -284,7 +392,7 @@
         data.forEach((row) => (cache[row.device_id] = row));
         render();
 
-        // Live updates (insert + update).
+        // Live updates (insert + update) to the latest-position table.
         supabase
           .channel("devices-changes")
           .on(
@@ -295,6 +403,22 @@
               if (row && row.device_id) {
                 cache[row.device_id] = row;
                 render();
+              }
+            }
+          )
+          .subscribe();
+
+        // Live history inserts: if the shown device reports a new point,
+        // extend its drawn path in real time (no reload needed).
+        supabase
+          .channel("locations-changes")
+          .on(
+            "postgres_changes",
+            { event: "INSERT", schema: "public", table: "locations" },
+            (payload) => {
+              const row = payload.new;
+              if (row && row.device_id === selectedDevice) {
+                showPath(selectedDevice);
               }
             }
           )
