@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:battery_plus/battery_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -19,14 +21,31 @@ const int _maxQueueSize = 200;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Intercept all uncaught Flutter framework & async errors so the APK NEVER hard-crashes.
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('FlutterError intercepted: ${details.exceptionAsString()}');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('PlatformDispatcher async error intercepted: $error');
+    return true; // handled, suppress crash
+  };
+
   try {
     await Supabase.initialize(
       url: AppConfig.supabaseUrl,
       anonKey: AppConfig.supabaseAnonKey,
     );
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('Supabase.initialize caught: $e');
+  }
 
-  await _initBackgroundService();
+  try {
+    await _initBackgroundService();
+  } catch (e) {
+    debugPrint('_initBackgroundService caught: $e');
+  }
+
   runApp(const TrackerApp());
 }
 
@@ -59,11 +78,27 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 Future<void> onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
+  // Intercept background isolate errors so background process never hard-crashes
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Background isolate error intercepted: $error');
+    return true;
+  };
+
   // Elevate to Android foreground service immediately so the OS doesn't kill it
   if (service is AndroidServiceInstance) {
-    service.setAsForegroundService();
-    service.on('setAsForeground').listen((_) => service.setAsForegroundService());
-    service.on('setAsBackground').listen((_) => service.setAsBackgroundService());
+    try {
+      service.setAsForegroundService();
+      service.on('setAsForeground').listen((_) {
+        try {
+          service.setAsForegroundService();
+        } catch (_) {}
+      });
+      service.on('setAsBackground').listen((_) {
+        try {
+          service.setAsBackgroundService();
+        } catch (_) {}
+      });
+    } catch (_) {}
   }
 
   try {
@@ -97,22 +132,24 @@ Future<void> onStart(ServiceInstance service) async {
 
   // Flush queued offline points.
   Future<void> flushQueue() async {
-    final raw = prefs.getStringList(_queueKey) ?? [];
-    if (raw.isEmpty) return;
-    final failed = <String>[];
-    for (final entry in raw) {
-      try {
-        final map = Map<String, dynamic>.from(jsonDecode(entry) as Map);
-        await Supabase.instance.client.from('locations').insert(map);
-      } catch (_) {
-        failed.add(entry);
+    try {
+      final raw = prefs.getStringList(_queueKey) ?? [];
+      if (raw.isEmpty) return;
+      final failed = <String>[];
+      for (final entry in raw) {
+        try {
+          final map = Map<String, dynamic>.from(jsonDecode(entry) as Map);
+          await Supabase.instance.client.from('locations').insert(map);
+        } catch (_) {
+          failed.add(entry);
+        }
       }
-    }
-    if (failed.isEmpty) {
-      await prefs.remove(_queueKey);
-    } else {
-      await prefs.setStringList(_queueKey, failed);
-    }
+      if (failed.isEmpty) {
+        await prefs.remove(_queueKey);
+      } else {
+        await prefs.setStringList(_queueKey, failed);
+      }
+    } catch (_) {}
   }
 
   Future<void> enqueue(Map<String, dynamic> payload) async {
@@ -133,7 +170,9 @@ Future<void> onStart(ServiceInstance service) async {
             timeLimit: const Duration(seconds: 8),
           );
         } catch (_) {
-          pending = await Geolocator.getLastKnownPosition();
+          try {
+            pending = await Geolocator.getLastKnownPosition();
+          } catch (_) {}
         }
       }
       final pos = pending;
@@ -144,9 +183,10 @@ Future<void> onStart(ServiceInstance service) async {
         batteryLevel = await battery.batteryLevel;
       } catch (_) {}
 
-      final nowIso = DateTime.now().toUtc().toIso8601String();
-      // GPS speed is m/s; convert to km/h. Negative means unavailable.
-      final double? speedKmh = (pos.speed >= 0)
+      final now = DateTime.now();
+      final nowIso = now.toUtc().toIso8601String();
+      // GPS speed is m/s; convert to km/h. Guard against NaN/infinite.
+      final double? speedKmh = (pos.speed.isFinite && pos.speed >= 0)
           ? double.parse((pos.speed * 3.6).toStringAsFixed(2))
           : null;
 
@@ -176,15 +216,19 @@ Future<void> onStart(ServiceInstance service) async {
         await Supabase.instance.client.from('devices').upsert(devicePayload);
         await Supabase.instance.client.from('locations').insert(locationPayload);
 
-        final time = TimeOfDay.fromDateTime(DateTime.now()).format24();
+        final h = now.hour.toString().padLeft(2, '0');
+        final m = now.minute.toString().padLeft(2, '0');
+        final timeStr = '$h:$m';
         final speedStr =
             speedKmh != null ? ' · ${speedKmh.toStringAsFixed(1)} km/h' : '';
 
         if (service is AndroidServiceInstance) {
-          service.setForegroundNotificationInfo(
-            title: 'Mobile Tracker — sharing location',
-            content: 'Last report $time$speedStr',
-          );
+          try {
+            service.setForegroundNotificationInfo(
+              title: 'Mobile Tracker — sharing location',
+              content: 'Last report $timeStr$speedStr',
+            );
+          } catch (_) {}
         }
         service.invoke('update', {
           'lat': pos.latitude,
@@ -328,76 +372,115 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _loadPendingCount() async {
-    final prefs = await SharedPreferences.getInstance();
-    final count = (prefs.getStringList(_queueKey) ?? []).length;
-    if (mounted) setState(() => _pendingCount = count);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final count = (prefs.getStringList(_queueKey) ?? []).length;
+      if (mounted) setState(() => _pendingCount = count);
+    } catch (_) {}
   }
 
   Future<void> _syncRunningState() async {
-    final running = await _service.isRunning();
-    if (!mounted) return;
-    setState(() {
-      _tracking = running;
-      _initialized = true;
-      if (running) {
-        if (!_status.startsWith('Reporting') && !_status.startsWith('Tracking')) {
-          _status = 'Tracking in the background. Reporting every ${AppConfig.reportIntervalSeconds}s.';
+    try {
+      final running = await _service.isRunning();
+      if (!mounted) return;
+      setState(() {
+        _tracking = running;
+        _initialized = true;
+        if (running) {
+          if (!_status.startsWith('Reporting') && !_status.startsWith('Tracking')) {
+            _status = 'Tracking in the background. Reporting every ${AppConfig.reportIntervalSeconds}s.';
+          }
+        } else {
+          if (_status == 'Checking status…' || _status.startsWith('Tracking') || _status.startsWith('Reporting')) {
+            _status = 'Idle. Press Start to begin sharing your location.';
+          }
         }
-      } else {
-        if (_status == 'Checking status…' || _status.startsWith('Tracking') || _status.startsWith('Reporting')) {
-          _status = 'Idle. Press Start to begin sharing your location.';
-        }
-      }
-    });
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadIdentity() async {
-    final prefs = await SharedPreferences.getInstance();
-    var id = prefs.getString('device_id');
-    if (id == null) {
-      id = 'dev_${DateTime.now().millisecondsSinceEpoch}';
-      await prefs.setString('device_id', id);
-    }
-    final name = prefs.getString('device_name') ?? 'My device';
-    if (!mounted) return;
-    setState(() {
-      _deviceId = id!;
-      _nameController.text = name;
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      var id = prefs.getString('device_id');
+      if (id == null) {
+        id = 'dev_${DateTime.now().millisecondsSinceEpoch}';
+        await prefs.setString('device_id', id);
+      }
+      final name = prefs.getString('device_name') ?? 'My device';
+      if (!mounted) return;
+      setState(() {
+        _deviceId = id!;
+        _nameController.text = name;
+      });
+    } catch (_) {}
   }
 
   Future<void> _saveName(String name) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('device_name', name.isEmpty ? 'My device' : name);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('device_name', name.isEmpty ? 'My device' : name);
+    } catch (_) {}
   }
 
   Future<bool> _ensurePermission() async {
+    // 1. Check if GPS / Location services are enabled on phone
     final enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {
       setState(() => _status = 'Location services are turned off on this phone.');
       return false;
     }
+
+    // 2. Request Notification permission (mandatory on Android 13/14 for Foreground Service)
+    try {
+      final notifStatus = await Permission.notification.status;
+      if (!notifStatus.isGranted) {
+        await Permission.notification.request();
+      }
+    } catch (_) {}
+
+    // 3. Request Location permission
     LocationPermission perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
+    }
     if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
       setState(() => _status = 'Location permission denied. Please allow in phone Settings.');
       return false;
     }
-    if (perm == LocationPermission.whileInUse) {
-      final upgraded = await Geolocator.requestPermission();
-      if (upgraded != LocationPermission.always && mounted) {
+
+    // 4. On Android, check background location & battery optimization
+    if (perm == LocationPermission.whileInUse && mounted) {
+      try {
+        final alwaysStatus = await Permission.locationAlways.status;
+        if (!alwaysStatus.isGranted) {
+          await Permission.locationAlways.request();
+        }
+      } catch (_) {}
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Tip: In Settings > Location, set to "Allow all the time" for screen-off tracking.'),
+            content: const Text('Tip: In Settings > Location, choose "Allow all the time" for continuous background tracking.'),
             action: SnackBarAction(
               label: 'Settings',
-              onPressed: () => Geolocator.openAppSettings(),
+              onPressed: () => openAppSettings(),
             ),
             duration: const Duration(seconds: 7),
           ),
         );
       }
     }
+
+    // 5. Ask to exempt from aggressive OEM battery killers (Xiaomi, Samsung, OnePlus)
+    try {
+      final batteryStatus = await Permission.ignoreBatteryOptimizations.status;
+      if (!batteryStatus.isGranted) {
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+    } catch (_) {}
+
     return true;
   }
 
@@ -405,16 +488,28 @@ class _HomePageState extends State<HomePage>
     final ok = await _ensurePermission();
     if (!ok) return;
     await _saveName(_nameController.text.trim());
-    await _service.startService();
-    if (!mounted) return;
-    setState(() {
-      _tracking = true;
-      _status = 'Tracking in the background. Reporting every ${AppConfig.reportIntervalSeconds}s.';
-    });
+
+    try {
+      final started = await _service.startService();
+      if (!mounted) return;
+      if (started) {
+        setState(() {
+          _tracking = true;
+          _status = 'Tracking in the background. Reporting every ${AppConfig.reportIntervalSeconds}s.';
+        });
+      } else {
+        setState(() => _status = 'Could not start background tracking service.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _status = 'Error starting tracking: $e');
+    }
   }
 
   Future<void> _stop() async {
-    _service.invoke('stopService');
+    try {
+      _service.invoke('stopService');
+    } catch (_) {}
     if (!mounted) return;
     setState(() {
       _tracking = false;
@@ -743,13 +838,5 @@ class _InfoRow extends StatelessWidget {
       Expanded(child: Text(value,
           style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis)),
     ]);
-  }
-}
-
-extension on TimeOfDay {
-  String format24() {
-    final h = hour.toString().padLeft(2, '0');
-    final m = minute.toString().padLeft(2, '0');
-    return '$h:$m';
   }
 }

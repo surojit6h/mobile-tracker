@@ -32,17 +32,17 @@ jobs:
       - name: Show Flutter version
         run: flutter --version
 
-      # The repo only contains lib/, pubspec.yaml and our custom
-      # Android manifest. We back up the files we care about, let
-      # `flutter create` generate the rest of the native project,
-      # then restore our files on top.
+      # The repo contains lib/, pubspec.yaml and custom native Android
+      # files (Manifest, MainApplication, MainActivity, drawables).
+      # We back them up, let `flutter create` generate the native scaffolding,
+      # then restore our custom files on top.
       - name: Back up custom files
         working-directory: app
         run: |
           mkdir -p ../_backup
           cp pubspec.yaml ../_backup/pubspec.yaml
-          if [ -f android/app/src/main/AndroidManifest.xml ]; then
-            cp android/app/src/main/AndroidManifest.xml ../_backup/AndroidManifest.xml
+          if [ -d android ]; then
+            cp -r android ../_backup/android
           fi
 
       - name: Generate native project scaffolding
@@ -53,8 +53,8 @@ jobs:
         working-directory: app
         run: |
           cp ../_backup/pubspec.yaml pubspec.yaml
-          if [ -f ../_backup/AndroidManifest.xml ]; then
-            cp ../_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          if [ -d ../_backup/android ]; then
+            cp -r ../_backup/android/* android/
           fi
 
       - name: Get dependencies
