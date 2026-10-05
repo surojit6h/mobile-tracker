@@ -4,6 +4,28 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Needed to keep reporting location while the app is in the background
+         or the screen is off. ACCESS_BACKGROUND_LOCATION must be granted by
+         the user as "Allow all the time". -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!-- Foreground service so Android keeps the tracking process alive.
+         FOREGROUND_SERVICE_LOCATION is required from Android 14 (API 34). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!-- The mandatory ongoing notification for the foreground service
+         (required to post notifications on Android 13+). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Lets the service restart after the device reboots (optional but
+         useful so tracking resumes without opening the app). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Allows asking the user to exempt the app from battery optimization,
+         which many manufacturers require or they kill background work. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:label="Mobile Tracker"
         android:icon="@mipmap/ic_launcher">
@@ -30,5 +52,24 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- flutter_background_service: the persistent foreground service that
+             runs the tracking loop. foregroundServiceType="location" is
+             required so Android 14+ allows location access from the service. -->
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
+
+        <!-- Restarts the service after a reboot (works with
+             RECEIVE_BOOT_COMPLETED above). -->
+        <receiver
+            android:name="id.flutter.flutter_background_service.BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

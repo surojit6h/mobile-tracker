@@ -26,6 +26,14 @@ dependencies:
   # Stable device id + simple local storage
   shared_preferences: ^2.2.3
 
+  # Keeps location reporting alive when the screen is off / app is in the
+  # background, by running a persistent Android foreground service.
+  flutter_background_service: ^5.0.5
+
+  # Required helper for flutter_background_service on Android to show/manage
+  # the mandatory foreground-service notification.
+  flutter_local_notifications: ^17.2.2
+
 dev_dependencies:
   flutter_lints: ^4.0.0
 

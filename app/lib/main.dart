@@ -1,12 +1,21 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
+
+// Android notification channel used by the foreground service. The ongoing
+// notification is mandatory for a location foreground service.
+const String _notifChannelId = 'tracker_foreground';
+const String _notifChannelName = 'Location tracking';
+const int _notifId = 7312;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,8 +25,177 @@ Future<void> main() async {
     anonKey: AppConfig.supabaseAnonKey,
   );
 
+  await _initBackgroundService();
+
   runApp(const TrackerApp());
 }
+
+// ---------------------------------------------------------------------------
+//  Background service setup
+// ---------------------------------------------------------------------------
+
+Future<void> _initBackgroundService() async {
+  final service = FlutterBackgroundService();
+
+  // Create the Android notification channel the foreground service uses.
+  final notifications = FlutterLocalNotificationsPlugin();
+  const androidChannel = AndroidNotificationChannel(
+    _notifChannelId,
+    _notifChannelName,
+    description: 'Shows while your location is being shared.',
+    importance: Importance.low, // low = quiet, no sound/vibration
+  );
+  await notifications
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(androidChannel);
+
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      onStart: onStart,
+      // We start manually (only after permission + button press), and the
+      // service runs as a foreground service so Android keeps it alive.
+      autoStart: false,
+      isForegroundMode: true,
+      notificationChannelId: _notifChannelId,
+      initialNotificationTitle: 'Mobile Tracker',
+      initialNotificationContent: 'Preparing to share location…',
+      foregroundServiceNotificationId: _notifId,
+    ),
+    iosConfiguration: IosConfiguration(
+      autoStart: false,
+      onForeground: onStart,
+      onBackground: onIosBackground,
+    ),
+  );
+}
+
+// iOS background fetch handler. iOS does not support long-running services the
+// same way; this returns true so the OS keeps scheduling it. Full iOS
+// background tracking would need additional setup, but Android is the target.
+@pragma('vm:entry-point')
+Future<bool> onIosBackground(ServiceInstance service) async {
+  return true;
+}
+
+// This runs in its OWN isolate. It must set up everything it needs from
+// scratch: binding, Supabase, and local storage.
+@pragma('vm:entry-point')
+Future<void> onStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+
+  await Supabase.initialize(
+    url: AppConfig.supabaseUrl,
+    anonKey: AppConfig.supabaseAnonKey,
+  );
+
+  final prefs = await SharedPreferences.getInstance();
+  final deviceId = prefs.getString('device_id') ?? 'unknown';
+  final deviceName = prefs.getString('device_name') ?? 'My device';
+
+  final battery = Battery();
+  final notifications = FlutterLocalNotificationsPlugin();
+
+  Position? pending;
+
+  // Listen to GPS; only keep the latest fix (distance-filtered to save power).
+  final settings = LocationSettings(
+    accuracy: LocationAccuracy.medium,
+    distanceFilter: AppConfig.minDistanceMeters,
+  );
+  final sub = Geolocator.getPositionStream(locationSettings: settings).listen(
+    (pos) => pending = pos,
+    onError: (_) {},
+  );
+
+  // Allow the UI to stop the service cleanly.
+  service.on('stopService').listen((event) async {
+    await sub.cancel();
+    await service.stopSelf();
+  });
+
+  Future<void> report() async {
+    // If we have no fresh fix yet, try a last-known one so the first report
+    // isn't empty.
+    pending ??= await Geolocator.getLastKnownPosition();
+    final pos = pending;
+    if (pos == null) return;
+
+    int? batteryLevel;
+    try {
+      batteryLevel = await battery.batteryLevel;
+    } catch (_) {
+      batteryLevel = null;
+    }
+
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    try {
+      await Supabase.instance.client.from('devices').upsert({
+        'device_id': deviceId,
+        'name': deviceName,
+        'lat': pos.latitude,
+        'lng': pos.longitude,
+        'battery': batteryLevel,
+        'accuracy': pos.accuracy,
+        'updated_at': nowIso,
+      });
+
+      await Supabase.instance.client.from('locations').insert({
+        'device_id': deviceId,
+        'lat': pos.latitude,
+        'lng': pos.longitude,
+        'battery': batteryLevel,
+        'accuracy': pos.accuracy,
+        'recorded_at': nowIso,
+      });
+
+      final time = TimeOfDay.fromDateTime(DateTime.now()).format24();
+      // Update the ongoing foreground-service notification so the user can
+      // see it's working. Reusing _notifId keeps it as the single ongoing
+      // notification rather than stacking new ones.
+      if (service is AndroidServiceInstance &&
+          await service.isForegroundService()) {
+        await notifications.show(
+          _notifId,
+          'Mobile Tracker — sharing location',
+          'Last report $time '
+              '(${pos.latitude.toStringAsFixed(4)}, '
+              '${pos.longitude.toStringAsFixed(4)})',
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              _notifChannelId,
+              _notifChannelName,
+              icon: 'ic_bg_service_small',
+              ongoing: true,
+            ),
+          ),
+        );
+      }
+      // Tell the UI (if open) about the latest report.
+      service.invoke('update', {
+        'lat': pos.latitude,
+        'lng': pos.longitude,
+        'at': nowIso,
+        'battery': batteryLevel,
+      });
+    } catch (e) {
+      service.invoke('update', {'error': e.toString()});
+    }
+
+    pending = null; // avoid re-sending the same point
+  }
+
+  // One report right away, then on the interval.
+  await report();
+  Timer.periodic(
+    Duration(seconds: AppConfig.reportIntervalSeconds),
+    (_) => report(),
+  );
+}
+
+// ---------------------------------------------------------------------------
+//  UI
+// ---------------------------------------------------------------------------
 
 class TrackerApp extends StatelessWidget {
   const TrackerApp({super.key});
@@ -44,32 +222,58 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final _battery = Battery();
+  final _service = FlutterBackgroundService();
   final _nameController = TextEditingController();
 
   bool _tracking = false;
   String _status = 'Idle. Press Start to begin sharing your location.';
   String _deviceId = '';
-  Position? _lastPosition;
-  StreamSubscription<Position>? _positionSub;
-  Timer? _reportTimer;
-  Position? _pendingPosition;
+  double? _lastLat;
+  double? _lastLng;
+  StreamSubscription<Map<String, dynamic>?>? _updateSub;
 
   @override
   void initState() {
     super.initState();
     _loadIdentity();
+    _syncRunningState();
+
+    // Receive live updates from the background service while the UI is open.
+    _updateSub = _service.on('update').listen((event) {
+      if (!mounted || event == null) return;
+      if (event['error'] != null) {
+        setState(() => _status = 'Upload failed: ${event['error']}');
+        return;
+      }
+      setState(() {
+        _lastLat = (event['lat'] as num?)?.toDouble();
+        _lastLng = (event['lng'] as num?)?.toDouble();
+        _status = 'Last report sent '
+            '(${_lastLat?.toStringAsFixed(5)}, '
+            '${_lastLng?.toStringAsFixed(5)})';
+      });
+    });
   }
 
   @override
   void dispose() {
-    _positionSub?.cancel();
-    _reportTimer?.cancel();
+    _updateSub?.cancel();
     _nameController.dispose();
     super.dispose();
   }
 
-  // A stable, random device id stored on the phone.
+  Future<void> _syncRunningState() async {
+    final running = await _service.isRunning();
+    if (!mounted) return;
+    setState(() {
+      _tracking = running;
+      if (running) {
+        _status = 'Tracking in the background. Reporting every '
+            '${AppConfig.reportIntervalSeconds}s when you move.';
+      }
+    });
+  }
+
   Future<void> _loadIdentity() async {
     final prefs = await SharedPreferences.getInstance();
     var id = prefs.getString('device_id');
@@ -78,6 +282,7 @@ class _HomePageState extends State<HomePage> {
       await prefs.setString('device_id', id);
     }
     final name = prefs.getString('device_name') ?? 'My device';
+    if (!mounted) return;
     setState(() {
       _deviceId = id!;
       _nameController.text = name;
@@ -86,9 +291,12 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _saveName(String name) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('device_name', name);
+    await prefs.setString(
+        'device_name', name.isEmpty ? 'My device' : name);
   }
 
+  // Requests location permission, escalating to "always" (background), which
+  // is required to keep tracking with the screen off.
   Future<bool> _ensurePermission() async {
     bool enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {
@@ -105,6 +313,18 @@ class _HomePageState extends State<HomePage> {
       setState(() => _status = 'Location permission denied.');
       return false;
     }
+
+    // "whileInUse" works in the foreground, but for reliable background
+    // tracking Android needs "always" (Allow all the time). Request the
+    // upgrade; if the user declines we still start, but warn them.
+    if (perm == LocationPermission.whileInUse) {
+      final upgraded = await Geolocator.requestPermission();
+      if (upgraded != LocationPermission.always) {
+        setState(() => _status =
+            'Tip: set location to "Allow all the time" so tracking keeps '
+            'working when the screen is off.');
+      }
+    }
     return true;
   }
 
@@ -114,115 +334,30 @@ class _HomePageState extends State<HomePage> {
 
     await _saveName(_nameController.text.trim());
 
-    // Battery-friendly settings: medium accuracy + distance filter so the
-    // phone only wakes up the GPS when it has actually moved.
-    final settings = LocationSettings(
-      accuracy: LocationAccuracy.medium,
-      distanceFilter: AppConfig.minDistanceMeters,
-    );
+    await _service.startService();
 
-    _positionSub =
-        Geolocator.getPositionStream(locationSettings: settings).listen(
-      (pos) {
-        _pendingPosition = pos;
-        _lastPosition = pos;
-      },
-      onError: (e) {
-        setState(() => _status = 'Location error: $e');
-      },
-    );
-
-    // Only actually upload on an interval, not on every GPS tick. This caps
-    // network use and is much kinder to the battery.
-    _reportTimer = Timer.periodic(
-      Duration(seconds: AppConfig.reportIntervalSeconds),
-      (_) => _report(),
-    );
-
-    // Send one point right away so the dashboard shows the device fast.
-    // getLastKnownPosition() takes no settings and is stable across
-    // geolocator versions. If there's no cached fix yet, the position
-    // stream above will deliver the first real fix within a few seconds.
-    final first = await Geolocator.getLastKnownPosition();
-    if (first != null) {
-      _pendingPosition = first;
-      _lastPosition = first;
-      await _report();
-    }
-
+    if (!mounted) return;
     setState(() {
       _tracking = true;
-      _status = 'Tracking. Reporting every '
+      _status = 'Tracking in the background. Reporting every '
           '${AppConfig.reportIntervalSeconds}s when you move.';
     });
   }
 
   Future<void> _stop() async {
-    await _positionSub?.cancel();
-    _reportTimer?.cancel();
-    _positionSub = null;
-    _reportTimer = null;
+    _service.invoke('stopService');
+    if (!mounted) return;
     setState(() {
       _tracking = false;
       _status = 'Stopped. Your location is no longer being shared.';
     });
   }
 
-  Future<void> _report() async {
-    final pos = _pendingPosition;
-    if (pos == null) return;
-
-    int? batteryLevel;
-    try {
-      batteryLevel = await _battery.batteryLevel;
-    } catch (_) {
-      batteryLevel = null;
-    }
-
-    final nowIso = DateTime.now().toUtc().toIso8601String();
-    final name = _nameController.text.trim().isEmpty
-        ? 'My device'
-        : _nameController.text.trim();
-
-    try {
-      // 1) Keep the "latest position" row up to date (powers the live marker).
-      await Supabase.instance.client.from('devices').upsert({
-        'device_id': _deviceId,
-        'name': name,
-        'lat': pos.latitude,
-        'lng': pos.longitude,
-        'battery': batteryLevel,
-        'accuracy': pos.accuracy,
-        'updated_at': nowIso,
-      });
-
-      // 2) Append this point to history so the dashboard can draw the path.
-      //    Each report is a new row, never overwritten.
-      await Supabase.instance.client.from('locations').insert({
-        'device_id': _deviceId,
-        'lat': pos.latitude,
-        'lng': pos.longitude,
-        'battery': batteryLevel,
-        'accuracy': pos.accuracy,
-        'recorded_at': nowIso,
-      });
-      setState(() {
-        _status = 'Last report: ${TimeOfDay.now().format(context)} '
-            '(${pos.latitude.toStringAsFixed(5)}, '
-            '${pos.longitude.toStringAsFixed(5)})';
-      });
-    } catch (e) {
-      setState(() => _status = 'Upload failed: $e');
-    }
-    _pendingPosition = null; // avoid re-sending the same point
-  }
-
   @override
   Widget build(BuildContext context) {
-    final lastText = _lastPosition == null
+    final lastText = (_lastLat == null || _lastLng == null)
         ? '—'
-        : '${_lastPosition!.latitude.toStringAsFixed(5)}, '
-            '${_lastPosition!.longitude.toStringAsFixed(5)}';
+        : '${_lastLat!.toStringAsFixed(5)}, ${_lastLng!.toStringAsFixed(5)}';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Mobile Tracker')),
@@ -233,7 +368,8 @@ class _HomePageState extends State<HomePage> {
           children: [
             const Text(
               'This app shares this phone\'s location with your dashboard '
-              'while tracking is on. Press Stop any time.',
+              'while tracking is on, even when the screen is off. '
+              'Press Stop any time.',
               style: TextStyle(fontSize: 13, color: Colors.black54),
             ),
             const SizedBox(height: 20),
@@ -249,7 +385,9 @@ class _HomePageState extends State<HomePage> {
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: _tracking ? const Color(0xFFE8F5E9) : const Color(0xFFF1F3F4),
+                color: _tracking
+                    ? const Color(0xFFE8F5E9)
+                    : const Color(0xFFF1F3F4),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
@@ -284,5 +422,14 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
     );
+  }
+}
+
+// Small helper for a 24h HH:mm string without pulling in intl.
+extension on TimeOfDay {
+  String format24() {
+    final h = hour.toString().padLeft(2, '0');
+    final m = minute.toString().padLeft(2, '0');
+    return '$h:$m';
   }
 }
