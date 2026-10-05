@@ -144,6 +144,9 @@
       .btn-gpx:hover { background: #1a4a2a; }
       .btn-clear { color: #f0b4b4; border-color: #4a2b2b; }
       .btn-clear:hover { background: #3a2222; color: #ffd4d4; }
+      /* Danger button: permanently remove device */
+      .btn-delete { color: #fff; background: #7d2b2b; border-color: #a83232; font-weight: 600; }
+      .btn-delete:hover { background: #a83232; border-color: #d04040; }
 
       /* map */
       #map { flex: 1; }
@@ -323,6 +326,37 @@
       }
 
       // ---- export helpers -----------------------------------------------
+      // Delete the device row AND all its history, then clean up the map.
+      // "Delete device" button is shown only for offline/stale devices.
+      async function deleteDevice(deviceId, deviceName) {
+        if (!supabaseClient) return;
+        const ok = window.confirm(
+          `Permanently delete "${deviceName}" from the dashboard?\n\n` +
+          "This removes the device AND ALL its location history.\n" +
+          "The phone app will re-appear next time it starts tracking."
+        );
+        if (!ok) return;
+
+        // Delete history first, then the device row (FK-safe order).
+        const { error: histErr } = await supabaseClient
+          .from("locations").delete().eq("device_id", deviceId);
+        if (histErr) { warn("Could not delete history: " + histErr.message); return; }
+
+        const { error: devErr } = await supabaseClient
+          .from("devices").delete().eq("device_id", deviceId);
+        if (devErr) { warn("Could not delete device: " + devErr.message); return; }
+
+        // Remove the map marker.
+        if (markers[deviceId]) { map.removeLayer(markers[deviceId]); delete markers[deviceId]; }
+
+        // If this device's path was visible, clear it.
+        if (selectedDevice === deviceId) { drawPath([]); selectedDevice = null; }
+
+        // Remove from local cache and re-render sidebar.
+        delete cache[deviceId];
+        render();
+      }
+
       async function exportCSV(deviceId, deviceName) {
         if (!supabaseClient) return;
         const { data, error } = await supabaseClient
@@ -464,6 +498,8 @@ ${pts}
               `<button class="action-btn btn-csv" title="Export trail as CSV">&#128196; CSV</button>` +
               `<button class="action-btn btn-gpx" title="Export trail as GPX (Google Earth, Strava, etc.)">&#128205; GPX</button>` +
               `<button class="action-btn btn-clear" title="Delete this device's travel history">&#128465; Clear</button>` +
+              // Show "Delete device" only when the device is stale or offline
+              (sc !== "fresh" ? `<button class="action-btn btn-delete" title="Permanently remove this device from the dashboard">&#10006; Delete device</button>` : "") +
             `</div>`;
 
           // Click card body -> show path
@@ -487,6 +523,15 @@ ${pts}
             e.stopPropagation();
             clearHistory(d.device_id, d.name);
           });
+
+          // Wire up Delete device button (only present on stale/offline cards).
+          const delBtn = card.querySelector(".btn-delete");
+          if (delBtn) {
+            delBtn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              deleteDevice(d.device_id, d.name);
+            });
+          }
 
           list.appendChild(card);
         });

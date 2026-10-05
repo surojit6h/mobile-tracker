@@ -51,6 +51,13 @@ create policy "update devices"
     using (true)
     with check (true);
 
+-- Allow deleting a device row (needed by the dashboard "Delete device" button).
+drop policy if exists "delete devices" on public.devices;
+create policy "delete devices"
+    on public.devices
+    for delete
+    using (true);
+
 -- 4) Enable Realtime so the dashboard map updates live.
 --    Guarded so re-running this file does not error if the table was
 --    already added to the publication on a previous run.
