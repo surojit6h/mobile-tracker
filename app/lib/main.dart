@@ -19,10 +19,12 @@ const int _maxQueueSize = 200;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url: AppConfig.supabaseUrl,
-    anonKey: AppConfig.supabaseAnonKey,
-  );
+  try {
+    await Supabase.initialize(
+      url: AppConfig.supabaseUrl,
+      anonKey: AppConfig.supabaseAnonKey,
+    );
+  } catch (_) {}
 
   await _initBackgroundService();
   runApp(const TrackerApp());
@@ -37,7 +39,7 @@ Future<void> _initBackgroundService() async {
       isForegroundMode: true,
       notificationChannelId: _notifChannelId,
       initialNotificationTitle: 'Mobile Tracker',
-      initialNotificationContent: 'Preparing to share location\u2026',
+      initialNotificationContent: 'Preparing to share location…',
       foregroundServiceNotificationId: _notifId,
     ),
     iosConfiguration: IosConfiguration(
@@ -57,10 +59,19 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 Future<void> onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
-  await Supabase.initialize(
-    url: AppConfig.supabaseUrl,
-    anonKey: AppConfig.supabaseAnonKey,
-  );
+  // Elevate to Android foreground service immediately so the OS doesn't kill it
+  if (service is AndroidServiceInstance) {
+    service.setAsForegroundService();
+    service.on('setAsForeground').listen((_) => service.setAsForegroundService());
+    service.on('setAsBackground').listen((_) => service.setAsBackgroundService());
+  }
+
+  try {
+    await Supabase.initialize(
+      url: AppConfig.supabaseUrl,
+      anonKey: AppConfig.supabaseAnonKey,
+    );
+  } catch (_) {}
 
   final prefs = await SharedPreferences.getInstance();
   final deviceId = prefs.getString('device_id') ?? 'unknown';
@@ -78,8 +89,10 @@ Future<void> onStart(ServiceInstance service) async {
   );
 
   service.on('stopService').listen((event) async {
-    await sub.cancel();
-    await service.stopSelf();
+    try {
+      await sub.cancel();
+      await service.stopSelf();
+    } catch (_) {}
   });
 
   // Flush queued offline points.
@@ -103,83 +116,102 @@ Future<void> onStart(ServiceInstance service) async {
   }
 
   Future<void> enqueue(Map<String, dynamic> payload) async {
-    final raw = prefs.getStringList(_queueKey) ?? [];
-    if (raw.length >= _maxQueueSize) return;
-    raw.add(jsonEncode(payload));
-    await prefs.setStringList(_queueKey, raw);
+    try {
+      final raw = prefs.getStringList(_queueKey) ?? [];
+      if (raw.length >= _maxQueueSize) return;
+      raw.add(jsonEncode(payload));
+      await prefs.setStringList(_queueKey, raw);
+    } catch (_) {}
   }
 
   Future<void> report() async {
-    pending ??= await Geolocator.getLastKnownPosition();
-    final pos = pending;
-    if (pos == null) return;
-
-    int? batteryLevel;
     try {
-      batteryLevel = await battery.batteryLevel;
-    } catch (_) {}
-
-    final nowIso = DateTime.now().toUtc().toIso8601String();
-    // GPS speed is m/s; convert to km/h. Negative means unavailable.
-    final double? speedKmh = (pos.speed >= 0)
-        ? double.parse((pos.speed * 3.6).toStringAsFixed(2))
-        : null;
-
-    final devicePayload = <String, dynamic>{
-      'device_id': deviceId,
-      'name': deviceName,
-      'lat': pos.latitude,
-      'lng': pos.longitude,
-      'battery': batteryLevel,
-      'accuracy': pos.accuracy,
-      'speed': speedKmh,
-      'updated_at': nowIso,
-    };
-
-    final locationPayload = <String, dynamic>{
-      'device_id': deviceId,
-      'lat': pos.latitude,
-      'lng': pos.longitude,
-      'battery': batteryLevel,
-      'accuracy': pos.accuracy,
-      'speed': speedKmh,
-      'recorded_at': nowIso,
-    };
-
-    try {
-      await flushQueue();
-      await Supabase.instance.client.from('devices').upsert(devicePayload);
-      await Supabase.instance.client.from('locations').insert(locationPayload);
-
-      final time = TimeOfDay.fromDateTime(DateTime.now()).format24();
-      final speedStr =
-          speedKmh != null ? ' \u00b7 ${speedKmh.toStringAsFixed(1)} km/h' : '';
-
-      if (service is AndroidServiceInstance &&
-          await service.isForegroundService()) {
-        service.setForegroundNotificationInfo(
-          title: 'Mobile Tracker \u2014 sharing location',
-          content: 'Last report $time$speedStr',
-        );
+      if (pending == null) {
+        try {
+          pending = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.medium,
+            timeLimit: const Duration(seconds: 8),
+          );
+        } catch (_) {
+          pending = await Geolocator.getLastKnownPosition();
+        }
       }
-      service.invoke('update', {
+      final pos = pending;
+      if (pos == null) return;
+
+      int? batteryLevel;
+      try {
+        batteryLevel = await battery.batteryLevel;
+      } catch (_) {}
+
+      final nowIso = DateTime.now().toUtc().toIso8601String();
+      // GPS speed is m/s; convert to km/h. Negative means unavailable.
+      final double? speedKmh = (pos.speed >= 0)
+          ? double.parse((pos.speed * 3.6).toStringAsFixed(2))
+          : null;
+
+      final devicePayload = <String, dynamic>{
+        'device_id': deviceId,
+        'name': deviceName,
         'lat': pos.latitude,
         'lng': pos.longitude,
-        'at': nowIso,
         'battery': batteryLevel,
-        'speed': speedKmh,
         'accuracy': pos.accuracy,
-      });
-    } catch (e) {
-      await enqueue(locationPayload);
-      service.invoke('update', {'error': e.toString()});
-    }
+        'speed': speedKmh,
+        'updated_at': nowIso,
+      };
 
-    pending = null;
+      final locationPayload = <String, dynamic>{
+        'device_id': deviceId,
+        'lat': pos.latitude,
+        'lng': pos.longitude,
+        'battery': batteryLevel,
+        'accuracy': pos.accuracy,
+        'speed': speedKmh,
+        'recorded_at': nowIso,
+      };
+
+      try {
+        await flushQueue();
+        await Supabase.instance.client.from('devices').upsert(devicePayload);
+        await Supabase.instance.client.from('locations').insert(locationPayload);
+
+        final time = TimeOfDay.fromDateTime(DateTime.now()).format24();
+        final speedStr =
+            speedKmh != null ? ' · ${speedKmh.toStringAsFixed(1)} km/h' : '';
+
+        if (service is AndroidServiceInstance) {
+          service.setForegroundNotificationInfo(
+            title: 'Mobile Tracker — sharing location',
+            content: 'Last report $time$speedStr',
+          );
+        }
+        service.invoke('update', {
+          'lat': pos.latitude,
+          'lng': pos.longitude,
+          'at': nowIso,
+          'battery': batteryLevel,
+          'speed': speedKmh,
+          'accuracy': pos.accuracy,
+        });
+      } catch (e) {
+        await enqueue(locationPayload);
+        service.invoke('update', {'error': e.toString()});
+      }
+
+      pending = null;
+    } catch (_) {}
   }
 
-  await report();
-  Timer.periodic(Duration(seconds: AppConfig.reportIntervalSeconds), (_) => report());
+  try {
+    await report();
+  } catch (_) {}
+
+  Timer.periodic(Duration(seconds: AppConfig.reportIntervalSeconds), (_) async {
+    try {
+      await report();
+    } catch (_) {}
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -217,12 +249,14 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _service = FlutterBackgroundService();
   final _nameController = TextEditingController();
 
   bool _tracking = false;
-  String _status = 'Idle. Press Start to begin sharing your location.';
+  String _status = 'Checking status…';
+  bool _initialized = false;
   String _deviceId = '';
   double? _lastLat;
   double? _lastLng;
@@ -232,12 +266,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   int _pendingCount = 0;
 
   StreamSubscription<Map<String, dynamic>?>? _updateSub;
+  Timer? _statusPollTimer;
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnim;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -248,14 +284,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _syncRunningState();
     _loadPendingCount();
 
+    // Poll service status every 2.5 seconds while UI is open to stay synced
+    _statusPollTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      if (mounted) _syncRunningState();
+    });
+
     _updateSub = _service.on('update').listen((event) {
       if (!mounted || event == null) return;
       if (event['error'] != null) {
         _loadPendingCount();
-        setState(() => _status = 'Upload failed \u2014 saved offline for retry.');
+        setState(() => _status = 'Upload failed — saved offline for retry.');
         return;
       }
       setState(() {
+        _tracking = true;
         _lastLat = (event['lat'] as num?)?.toDouble();
         _lastLng = (event['lng'] as num?)?.toDouble();
         _lastSpeed = (event['speed'] as num?)?.toDouble();
@@ -269,10 +311,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _statusPollTimer?.cancel();
     _pulseController.dispose();
     _updateSub?.cancel();
     _nameController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncRunningState();
+      _loadPendingCount();
+    }
   }
 
   Future<void> _loadPendingCount() async {
@@ -286,7 +338,16 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (!mounted) return;
     setState(() {
       _tracking = running;
-      if (running) _status = 'Tracking in the background. Reporting every ${AppConfig.reportIntervalSeconds}s.';
+      _initialized = true;
+      if (running) {
+        if (!_status.startsWith('Reporting') && !_status.startsWith('Tracking')) {
+          _status = 'Tracking in the background. Reporting every ${AppConfig.reportIntervalSeconds}s.';
+        }
+      } else {
+        if (_status == 'Checking status…' || _status.startsWith('Tracking') || _status.startsWith('Reporting')) {
+          _status = 'Idle. Press Start to begin sharing your location.';
+        }
+      }
     });
   }
 
@@ -319,13 +380,22 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     LocationPermission perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
     if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
-      setState(() => _status = 'Location permission denied.');
+      setState(() => _status = 'Location permission denied. Please allow in phone Settings.');
       return false;
     }
     if (perm == LocationPermission.whileInUse) {
       final upgraded = await Geolocator.requestPermission();
-      if (upgraded != LocationPermission.always) {
-        setState(() => _status = 'Tip: set location to "Allow all the time" for reliable background tracking.');
+      if (upgraded != LocationPermission.always && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Tip: In Settings > Location, set to "Allow all the time" for screen-off tracking.'),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: () => Geolocator.openAppSettings(),
+            ),
+            duration: const Duration(seconds: 7),
+          ),
+        );
       }
     }
     return true;
@@ -504,7 +574,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                         const Icon(Icons.cloud_upload_outlined, color: Colors.orange, size: 18),
                         const SizedBox(width: 10),
                         Expanded(child: Text(
-                          '$_pendingCount point${_pendingCount == 1 ? '' : 's'} queued offline \u2014 '
+                          '$_pendingCount point${_pendingCount == 1 ? '' : 's'} queued offline — '
                           'will sync automatically when internet returns.',
                           style: const TextStyle(fontSize: 12, color: Colors.orange),
                         )),
@@ -550,7 +620,37 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               ]),
             ),
 
-            const SizedBox(height: 28),
+            const SizedBox(height: 20),
+
+            // Background tip card
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E2530) : const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: isDark ? const Color(0xFF2E3B4E) : const Color(0xFFBFDBFE)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFF3B82F6)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'For 24/7 background tracking: set Location to "Allow all the time" '
+                      'and turn off Battery Optimization for Mobile Tracker in Android Settings.',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: isDark ? Colors.white70 : const Color(0xFF1E3A8A),
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
 
             // Start / Stop
             SizedBox(
