@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -53,23 +54,16 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- flutter_background_service: the persistent foreground service that
-             runs the tracking loop. foregroundServiceType="location" is
-             required so Android 14+ allows location access from the service. -->
+        <!-- flutter_background_service already declares the BackgroundService
+             and BootReceiver in its own manifest. We MUST NOT redeclare them
+             (conflicting attributes break the manifest merge). Here we only
+             MERGE an extra attribute onto the plugin's service: the
+             foregroundServiceType="location" required by Android 14+ so the
+             service may access location. tools:node="merge" keeps the plugin's
+             own attributes (exported, stopWithTask) intact. -->
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"
             android:foregroundServiceType="location"
-            android:exported="false" />
-
-        <!-- Restarts the service after a reboot (works with
-             RECEIVE_BOOT_COMPLETED above). -->
-        <receiver
-            android:name="id.flutter.flutter_background_service.BootReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
+            tools:node="merge" />
     </application>
 </manifest>
