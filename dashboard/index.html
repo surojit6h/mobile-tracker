@@ -120,6 +120,7 @@
       .device .meta { font-size: 12px; color: #8b949e; line-height: 1.5; }
       .device .meta .batt { color: #3fb950; }
       .device .meta .spd  { color: #60a5fa; }
+      .device .meta .dist { color: #f59e0b; font-weight: 500; }
 
       /* action buttons row */
       .device-actions {
@@ -149,7 +150,7 @@
       .btn-delete:hover { background: #a83232; border-color: #d04040; }
 
       /* map */
-      #map { flex: 1; }
+      #map { flex: 1; position: relative; }
 
       /* banner */
       #banner {
@@ -183,6 +184,74 @@
         display: none;
         flex-shrink: 0;
       }
+
+      /* floating trail statistics bar */
+      #trail-bar {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        z-index: 1100;
+        background: rgba(17, 22, 28, 0.92);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid #2a313b;
+        border-radius: 12px;
+        padding: 8px 14px;
+        display: none;
+        align-items: center;
+        gap: 12px;
+        color: #e6edf3;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      }
+      #trail-bar .trail-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+      }
+      #trail-bar .trail-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #3b82f6;
+        box-shadow: 0 0 6px #3b82f6;
+      }
+      #trail-bar .trail-name {
+        font-weight: 600;
+        max-width: 140px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #trail-bar .trail-pill {
+        background: #1f2733;
+        border: 1px solid #2e3a4e;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      #trail-bar .trail-pill b {
+        color: #f59e0b;
+        font-weight: 700;
+      }
+      #trail-close {
+        background: transparent;
+        border: none;
+        color: #8b949e;
+        font-size: 14px;
+        cursor: pointer;
+        padding: 4px 6px;
+        line-height: 1;
+        border-radius: 4px;
+        transition: color 0.15s, background 0.15s;
+      }
+      #trail-close:hover {
+        color: #fff;
+        background: #2a313b;
+      }
     </style>
   </head>
   <body>
@@ -202,7 +271,17 @@
         <div id="list"><div id="empty">Connecting&hellip;</div></div>
         <div id="stale-alert">&#9888; One or more devices may be offline (no update &gt;15 min).</div>
       </div>
-      <div id="map"></div>
+      <div id="map">
+        <div id="trail-bar">
+          <div class="trail-info">
+            <div class="trail-dot"></div>
+            <div class="trail-name" id="trail-name">Device Trail</div>
+            <div class="trail-pill"><span class="trail-icon">&#128207;</span> <b id="trail-dist">0.00 km</b></div>
+            <div class="trail-pill"><span class="trail-icon">&#128205;</span> <span id="trail-pts">0 pts</span></div>
+          </div>
+          <button id="trail-close" title="Hide trail">&#10005;</button>
+        </div>
+      </div>
     </div>
 
     <!-- Your Supabase keys live here -->
@@ -270,7 +349,36 @@
 
       const markers = {};
       const cache = {};
+      const deviceDistances = {};
+      const lastKnownPoints = {};
       let firstFit = true;
+
+      // Close trail listener
+      document.getElementById("trail-close").addEventListener("click", () => {
+        if (selectedDevice) {
+          selectedDevice = null;
+          drawPath([]);
+          render();
+        }
+      });
+
+      // ---- distance calculation helpers ---------------------------------
+      function calculateDistanceKm(points) {
+        if (!points || points.length < 2) return 0;
+        let totalMeters = 0;
+        for (let i = 1; i < points.length; i++) {
+          totalMeters += L.latLng(points[i - 1][0], points[i - 1][1]).distanceTo(
+            L.latLng(points[i][0], points[i][1])
+          );
+        }
+        return totalMeters / 1000;
+      }
+
+      function formatDistance(km) {
+        if (km == null || isNaN(km)) return "--";
+        if (km < 1) return Math.round(km * 1000) + " m";
+        return km.toFixed(2) + " km";
+      }
 
       // ---- travel path state --------------------------------------------
       let supabaseClient = null;
@@ -291,14 +399,37 @@
           .limit(PATH_LIMIT);
 
         if (error) { warn("Could not load path: " + error.message); return; }
-        drawPath((data || []).map((r) => [r.lat, r.lng]));
+        const points = (data || []).map((r) => [r.lat, r.lng]);
+        const distKm = calculateDistanceKm(points);
+        deviceDistances[deviceId] = distKm;
+
+        drawPath(points);
+        updateTrailBar(deviceId, distKm, points.length);
         render(); // refresh selected highlight
+      }
+
+      function updateTrailBar(deviceId, distKm, count) {
+        const bar = document.getElementById("trail-bar");
+        if (!bar) return;
+        if (!count || count < 1) {
+          bar.style.display = "none";
+          return;
+        }
+        const dev = cache[deviceId];
+        document.getElementById("trail-name").textContent = dev ? dev.name : "Device";
+        document.getElementById("trail-dist").textContent = formatDistance(distKm);
+        document.getElementById("trail-pts").textContent = count + (count === 1 ? " pt" : " pts");
+        bar.style.display = "flex";
       }
 
       function drawPath(points) {
         if (pathLine) { map.removeLayer(pathLine); pathLine = null; }
         if (pathDots) { map.removeLayer(pathDots); pathDots = null; }
-        if (!points.length) return;
+        const bar = document.getElementById("trail-bar");
+        if (!points || !points.length) {
+          if (bar) bar.style.display = "none";
+          return;
+        }
 
         pathLine = L.polyline(points, { color: "#3b82f6", weight: 4, opacity: 0.85 }).addTo(map);
         pathDots = L.layerGroup(
@@ -321,6 +452,7 @@
           .from("locations").delete().eq("device_id", deviceId);
         if (error) { warn("Could not clear history: " + error.message); return; }
 
+        deviceDistances[deviceId] = 0;
         if (selectedDevice === deviceId) { drawPath([]); selectedDevice = null; }
         render();
       }
@@ -461,8 +593,12 @@ ${pts}
         const bounds = [];
 
         devices.forEach((d) => {
+          const distVal = deviceDistances[d.device_id];
+          const distStr = distVal != null ? formatDistance(distVal) : "--";
+
           const popup =
             `<b>${d.name}</b><br/>` +
+            `Distance: ${distStr}<br/>` +
             `Battery: ${d.battery == null ? "?" : d.battery + "%"}<br/>` +
             `Speed: ${d.speed == null ? "?" : d.speed.toFixed(1) + " km/h"}<br/>` +
             `Accuracy: ${d.accuracy == null ? "?" : Math.round(d.accuracy) + " m"}<br/>` +
@@ -487,13 +623,16 @@ ${pts}
           const spdHtml = d.speed != null
             ? `<span class="spd">&#128663; ${d.speed.toFixed(1)} km/h</span> &middot; `
             : "";
+          const distHtml = distVal != null && distVal > 0
+            ? `<span class="dist" title="Total distance traveled">&#128207; ${distStr}</span> &middot; `
+            : "";
 
           card.innerHTML =
             `<div class="device-header">` +
               `<div class="name">${d.name}</div>` +
               `<span class="stale-dot" title="${timeAgo(d.updated_at)}"></span>` +
             `</div>` +
-            `<div class="meta">${battHtml}${spdHtml}${timeAgo(d.updated_at)}</div>` +
+            `<div class="meta">${battHtml}${spdHtml}${distHtml}${timeAgo(d.updated_at)}</div>` +
             `<div class="device-actions">` +
               `<button class="action-btn btn-csv" title="Export trail as CSV">&#128196; CSV</button>` +
               `<button class="action-btn btn-gpx" title="Export trail as GPX (Google Earth, Strava, etc.)">&#128205; GPX</button>` +
@@ -563,6 +702,29 @@ ${pts}
         data.forEach((row) => (cache[row.device_id] = row));
         render();
 
+        // Calculate kilometers from recent trail points for each device
+        try {
+          const { data: locHistory } = await supabase
+            .from("locations")
+            .select("device_id,lat,lng,recorded_at")
+            .order("recorded_at", { ascending: true })
+            .limit(2000);
+          if (locHistory && locHistory.length) {
+            const grouped = {};
+            locHistory.forEach((pt) => {
+              if (!grouped[pt.device_id]) grouped[pt.device_id] = [];
+              grouped[pt.device_id].push([pt.lat, pt.lng]);
+            });
+            Object.keys(grouped).forEach((devId) => {
+              deviceDistances[devId] = calculateDistanceKm(grouped[devId]);
+              if (grouped[devId].length > 0) {
+                lastKnownPoints[devId] = grouped[devId][grouped[devId].length - 1];
+              }
+            });
+            render();
+          }
+        } catch (_) {}
+
         // Live updates to current-position table
         supabase
           .channel("devices-changes")
@@ -574,14 +736,23 @@ ${pts}
               })
           .subscribe();
 
-        // Live history inserts -> extend path if selected
+        // Live history inserts -> extend path if selected & update distance
         supabase
           .channel("locations-changes")
           .on("postgres_changes",
               { event: "INSERT", schema: "public", table: "locations" },
               (payload) => {
                 const row = payload.new;
-                if (row && row.device_id === selectedDevice) showPath(selectedDevice);
+                if (row && row.device_id) {
+                  if (lastKnownPoints[row.device_id]) {
+                    const d = L.latLng(lastKnownPoints[row.device_id][0], lastKnownPoints[row.device_id][1])
+                      .distanceTo(L.latLng(row.lat, row.lng));
+                    deviceDistances[row.device_id] = (deviceDistances[row.device_id] || 0) + (d / 1000);
+                  }
+                  lastKnownPoints[row.device_id] = [row.lat, row.lng];
+                  if (row.device_id === selectedDevice) showPath(selectedDevice);
+                  render();
+                }
               })
           .subscribe();
 

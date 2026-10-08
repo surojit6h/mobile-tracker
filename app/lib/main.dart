@@ -114,6 +114,20 @@ Future<void> onStart(ServiceInstance service) async {
   final battery = Battery();
   Position? pending;
 
+  double sessionDistanceMeters = prefs.getDouble('session_distance_meters') ?? 0.0;
+  double? lastRecordedLat = prefs.getDouble('last_recorded_lat');
+  double? lastRecordedLng = prefs.getDouble('last_recorded_lng');
+
+  service.on('resetDistance').listen((_) async {
+    sessionDistanceMeters = 0.0;
+    lastRecordedLat = null;
+    lastRecordedLng = null;
+    await prefs.setDouble('session_distance_meters', 0.0);
+    await prefs.remove('last_recorded_lat');
+    await prefs.remove('last_recorded_lng');
+    service.invoke('update', {'distance_km': 0.0});
+  });
+
   final settings = LocationSettings(
     accuracy: LocationAccuracy.medium,
     distanceFilter: AppConfig.minDistanceMeters,
@@ -211,6 +225,30 @@ Future<void> onStart(ServiceInstance service) async {
         'recorded_at': nowIso,
       };
 
+      // Distance calculation: accumulate valid movement (>= minDistanceMeters)
+      if (lastRecordedLat != null && lastRecordedLng != null) {
+        final d = Geolocator.distanceBetween(
+          lastRecordedLat!,
+          lastRecordedLng!,
+          pos.latitude,
+          pos.longitude,
+        );
+        if (d >= AppConfig.minDistanceMeters) {
+          sessionDistanceMeters += d;
+          lastRecordedLat = pos.latitude;
+          lastRecordedLng = pos.longitude;
+          await prefs.setDouble('session_distance_meters', sessionDistanceMeters);
+          await prefs.setDouble('last_recorded_lat', pos.latitude);
+          await prefs.setDouble('last_recorded_lng', pos.longitude);
+        }
+      } else {
+        lastRecordedLat = pos.latitude;
+        lastRecordedLng = pos.longitude;
+        await prefs.setDouble('last_recorded_lat', pos.latitude);
+        await prefs.setDouble('last_recorded_lng', pos.longitude);
+      }
+      final double distanceKm = sessionDistanceMeters / 1000.0;
+
       try {
         await flushQueue();
         await Supabase.instance.client.from('devices').upsert(devicePayload);
@@ -221,12 +259,13 @@ Future<void> onStart(ServiceInstance service) async {
         final timeStr = '$h:$m';
         final speedStr =
             speedKmh != null ? ' · ${speedKmh.toStringAsFixed(1)} km/h' : '';
+        final distStr = ' · ${distanceKm.toStringAsFixed(2)} km';
 
         if (service is AndroidServiceInstance) {
           try {
             service.setForegroundNotificationInfo(
               title: 'Mobile Tracker — sharing location',
-              content: 'Last report $timeStr$speedStr',
+              content: 'Last report $timeStr$speedStr$distStr',
             );
           } catch (_) {}
         }
@@ -237,10 +276,14 @@ Future<void> onStart(ServiceInstance service) async {
           'battery': batteryLevel,
           'speed': speedKmh,
           'accuracy': pos.accuracy,
+          'distance_km': distanceKm,
         });
       } catch (e) {
         await enqueue(locationPayload);
-        service.invoke('update', {'error': e.toString()});
+        service.invoke('update', {
+          'error': e.toString(),
+          'distance_km': distanceKm,
+        });
       }
 
       pending = null;
@@ -307,6 +350,7 @@ class _HomePageState extends State<HomePage>
   double? _lastSpeed;
   int? _lastBattery;
   double? _lastAccuracy;
+  double _distanceKm = 0.0;
   int _pendingCount = 0;
 
   StreamSubscription<Map<String, dynamic>?>? _updateSub;
@@ -327,6 +371,7 @@ class _HomePageState extends State<HomePage>
     _loadIdentity();
     _syncRunningState();
     _loadPendingCount();
+    _loadSavedDistance();
 
     // Poll service status every 2.5 seconds while UI is open to stay synced
     _statusPollTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
@@ -335,6 +380,9 @@ class _HomePageState extends State<HomePage>
 
     _updateSub = _service.on('update').listen((event) {
       if (!mounted || event == null) return;
+      if (event['distance_km'] != null) {
+        _distanceKm = (event['distance_km'] as num).toDouble();
+      }
       if (event['error'] != null) {
         _loadPendingCount();
         setState(() => _status = 'Upload failed — saved offline for retry.');
@@ -368,6 +416,41 @@ class _HomePageState extends State<HomePage>
     if (state == AppLifecycleState.resumed) {
       _syncRunningState();
       _loadPendingCount();
+      _loadSavedDistance();
+    }
+  }
+
+  Future<void> _loadSavedDistance() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final meters = prefs.getDouble('session_distance_meters') ?? 0.0;
+      if (mounted) {
+        setState(() => _distanceKm = meters / 1000.0);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _resetDistance() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Trip Distance?'),
+        content: const Text('Do you want to reset the recorded trip distance back to 0.00 km?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Reset')),
+        ],
+      ),
+    );
+    if (ok == true) {
+      try {
+        _service.invoke('resetDistance');
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setDouble('session_distance_meters', 0.0);
+        await prefs.remove('last_recorded_lat');
+        await prefs.remove('last_recorded_lng');
+        if (mounted) setState(() => _distanceKm = 0.0);
+      } catch (_) {}
     }
   }
 
@@ -616,11 +699,11 @@ class _HomePageState extends State<HomePage>
               },
             ),
 
-            // Live metrics (speed / battery / accuracy)
+            // Live metrics (speed / distance / battery / accuracy)
             AnimatedSize(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOut,
-              child: _tracking
+              child: (_tracking || _distanceKm > 0)
                   ? Padding(
                       padding: const EdgeInsets.only(top: 12),
                       child: Row(children: [
@@ -630,7 +713,15 @@ class _HomePageState extends State<HomePage>
                           unit: _lastSpeed != null ? 'km/h' : '',
                           color: Colors.blue, isDark: isDark,
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
+                        _MetricCard(
+                          icon: Icons.route_rounded, label: 'Trip (km)',
+                          value: _distanceKm.toStringAsFixed(2),
+                          unit: 'km',
+                          color: const Color(0xFFF59E0B), isDark: isDark,
+                          onTap: _distanceKm > 0 ? _resetDistance : null,
+                        ),
+                        const SizedBox(width: 8),
                         _MetricCard(
                           icon: Icons.battery_std_rounded, label: 'Battery',
                           value: _lastBattery != null ? '$_lastBattery' : '--',
@@ -639,7 +730,7 @@ class _HomePageState extends State<HomePage>
                               ? Colors.red : Colors.green,
                           isDark: isDark,
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         _MetricCard(
                           icon: Icons.my_location_rounded, label: 'Accuracy',
                           value: _lastAccuracy != null ? _lastAccuracy!.toStringAsFixed(0) : '--',
@@ -783,40 +874,52 @@ class _MetricCard extends StatelessWidget {
   const _MetricCard({
     required this.icon, required this.label, required this.value,
     required this.unit, required this.color, required this.isDark,
+    this.onTap,
   });
   final IconData icon;
   final String label, value, unit;
   final Color color;
   final bool isDark;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF161B22) : Colors.white,
-          border: Border.all(color: isDark ? const Color(0xFF2A313B) : Colors.grey.shade200),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(height: 7),
-          RichText(
-            textAlign: TextAlign.center,
-            text: TextSpan(children: [
-              TextSpan(text: value,
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: color)),
-              if (unit.isNotEmpty)
-                TextSpan(text: ' $unit',
-                    style: TextStyle(fontWeight: FontWeight.w500, fontSize: 10,
-                        color: color.withOpacity(0.7))),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF161B22) : Colors.white,
+              border: Border.all(color: isDark ? const Color(0xFF2A313B) : Colors.grey.shade200),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, color: color, size: 19),
+              const SizedBox(height: 6),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: RichText(
+                  textAlign: TextAlign.center,
+                  text: TextSpan(children: [
+                    TextSpan(text: value,
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: color)),
+                    if (unit.isNotEmpty)
+                      TextSpan(text: ' $unit',
+                          style: TextStyle(fontWeight: FontWeight.w500, fontSize: 9.5,
+                              color: color.withOpacity(0.7))),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(label, style: TextStyle(fontSize: 10,
+                  color: isDark ? Colors.white38 : Colors.black38)),
             ]),
           ),
-          const SizedBox(height: 3),
-          Text(label, style: TextStyle(fontSize: 10,
-              color: isDark ? Colors.white38 : Colors.black38)),
-        ]),
+        ),
       ),
     );
   }
