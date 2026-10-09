@@ -14,10 +14,10 @@ class AppConfig {
       "sb_publishable_1uIwf3z3h1CwdaW-sXQl1A_K3cneAIE";
 
   // How often to report location, in seconds.
-  // Larger = better battery life. 120s (2 min) is a good balance.
-  static const int reportIntervalSeconds = 120;
+  // 10s gives real-time Swiggy/Zomato style live movement!
+  static const int reportIntervalSeconds = 10;
 
   // Only send a new point if the phone moved at least this many meters.
-  // Saves battery and network when the phone is sitting still.
-  static const int minDistanceMeters = 25;
+  // 10m allows fluid street-level updates.
+  static const int minDistanceMeters = 10;
 }

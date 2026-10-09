@@ -135,7 +135,7 @@ Future<void> onStart(ServiceInstance service) async {
   });
 
   final settings = LocationSettings(
-    accuracy: LocationAccuracy.medium,
+    accuracy: LocationAccuracy.high,
     distanceFilter: AppConfig.minDistanceMeters,
   );
   final sub = Geolocator.getPositionStream(locationSettings: settings).listen(
@@ -210,6 +210,11 @@ Future<void> onStart(ServiceInstance service) async {
           ? double.parse((pos.speed * 3.6).toStringAsFixed(2))
           : null;
 
+      // GPS heading in degrees 0-360. Guard against NaN/negative.
+      final double? headingDeg = (pos.heading.isFinite && pos.heading >= 0)
+          ? double.parse(pos.heading.toStringAsFixed(1))
+          : null;
+
       // Distance calculation: accumulate valid movement (>= minDistanceMeters)
       if (lastRecordedLat != null && lastRecordedLng != null) {
         final d = Geolocator.distanceBetween(
@@ -243,6 +248,7 @@ Future<void> onStart(ServiceInstance service) async {
         'battery': batteryLevel,
         'accuracy': pos.accuracy,
         'speed': speedKmh,
+        'heading': headingDeg,
         'updated_at': nowIso,
       };
 
@@ -253,6 +259,7 @@ Future<void> onStart(ServiceInstance service) async {
         'battery': batteryLevel,
         'accuracy': pos.accuracy,
         'speed': speedKmh,
+        'heading': headingDeg,
         'recorded_at': nowIso,
       };
 
@@ -263,7 +270,17 @@ Future<void> onStart(ServiceInstance service) async {
             ..['distance'] = distanceKm;
           await Supabase.instance.client.from('devices').upsert(devWithDistance);
         } catch (_) {
-          await Supabase.instance.client.from('devices').upsert(devicePayload);
+          final basicPayload = <String, dynamic>{
+            'device_id': deviceId,
+            'name': deviceName,
+            'lat': pos.latitude,
+            'lng': pos.longitude,
+            'battery': batteryLevel,
+            'accuracy': pos.accuracy,
+            'speed': speedKmh,
+            'updated_at': nowIso,
+          };
+          await Supabase.instance.client.from('devices').upsert(basicPayload);
         }
 
         try {
@@ -271,7 +288,16 @@ Future<void> onStart(ServiceInstance service) async {
             ..['distance'] = distanceKm;
           await Supabase.instance.client.from('locations').insert(locWithDistance);
         } catch (_) {
-          await Supabase.instance.client.from('locations').insert(locationPayload);
+          final basicLoc = <String, dynamic>{
+            'device_id': deviceId,
+            'lat': pos.latitude,
+            'lng': pos.longitude,
+            'battery': batteryLevel,
+            'accuracy': pos.accuracy,
+            'speed': speedKmh,
+            'recorded_at': nowIso,
+          };
+          await Supabase.instance.client.from('locations').insert(basicLoc);
         }
 
         final h = now.hour.toString().padLeft(2, '0');

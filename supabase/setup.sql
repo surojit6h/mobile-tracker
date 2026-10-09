@@ -16,6 +16,7 @@ create table if not exists public.devices (
     accuracy    double precision,
     speed       double precision,          -- km/h from GPS (nullable)
     distance    double precision,          -- km from phone trip meter (nullable)
+    heading     double precision,          -- bearing/rotation in degrees 0-360 (nullable)
     updated_at  timestamptz not null default now()
 );
 
@@ -84,6 +85,7 @@ create table if not exists public.locations (
     accuracy    double precision,
     speed       double precision,          -- km/h from GPS (nullable)
     distance    double precision,          -- km from phone trip meter (nullable)
+    heading     double precision,          -- bearing/rotation in degrees 0-360 (nullable)
     recorded_at timestamptz not null default now()
 );
 
@@ -177,6 +179,16 @@ alter table if exists public.devices
 
 alter table if exists public.locations
     add column if not exists distance double precision;   -- km, nullable
+
+-- =====================================================================
+-- 9) Migration: add `heading` column (bearing angle in degrees 0-360)
+--    for Swiggy/Zomato style vehicle rotation.
+-- =====================================================================
+alter table if exists public.devices
+    add column if not exists heading double precision;   -- degrees 0-360, nullable
+
+alter table if exists public.locations
+    add column if not exists heading double precision;   -- degrees 0-360, nullable
 
 -- =====================================================================
 -- SECURITY NOTE

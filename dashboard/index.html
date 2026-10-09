@@ -253,6 +253,141 @@
         color: #fff;
         background: #2a313b;
       }
+
+      /* ---- Swiggy / Zomato live delivery styles ---- */
+      .delivery-div-icon {
+        background: transparent !important;
+        border: none !important;
+      }
+      .delivery-marker-wrap {
+        position: relative;
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .delivery-pulse {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: rgba(255, 82, 0, 0.35);
+        animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        pointer-events: none;
+      }
+      .delivery-marker-wrap.offline .delivery-pulse {
+        display: none;
+      }
+      @keyframes pulse-ring {
+        0% { transform: scale(0.6); opacity: 0.95; }
+        70% { transform: scale(1.6); opacity: 0; }
+        100% { transform: scale(1.8); opacity: 0; }
+      }
+      .delivery-vehicle {
+        position: relative;
+        width: 40px;
+        height: 40px;
+        background: #0f172a;
+        border: 2.5px solid #ff5200;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), 0 0 12px rgba(255, 82, 0, 0.45);
+        transition: transform 0.4s ease-out;
+        z-index: 2;
+        cursor: pointer;
+      }
+      .delivery-vehicle svg {
+        width: 24px;
+        height: 24px;
+        display: block;
+      }
+      .delivery-marker-wrap.stale .delivery-vehicle {
+        border-color: #f59e0b;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+      }
+      .delivery-marker-wrap.offline .delivery-vehicle {
+        border-color: #64748b;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+      }
+      .delivery-badge {
+        position: absolute;
+        top: -14px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(15, 23, 42, 0.94);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 12px;
+        white-space: nowrap;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        z-index: 10;
+      }
+      .delivery-badge .badge-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #22c55e;
+        flex-shrink: 0;
+      }
+      .delivery-marker-wrap.stale .delivery-badge .badge-dot {
+        background: #f59e0b;
+      }
+      .delivery-marker-wrap.offline .delivery-badge .badge-dot {
+        background: #ef4444;
+      }
+      .follow-btn {
+        background: #1e293b;
+        border: 1px solid #3b82f6;
+        color: #93c5fd;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        transition: all 0.2s;
+      }
+      .follow-btn.active {
+        background: #2563eb;
+        border-color: #60a5fa;
+        color: #fff;
+        box-shadow: 0 0 8px rgba(37, 99, 235, 0.5);
+      }
+      .rider-pill {
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        margin-left: 6px;
+        vertical-align: middle;
+      }
+      .rider-pill.moving {
+        background: rgba(34, 197, 94, 0.15);
+        color: #4ade80;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+      }
+      .rider-pill.idle {
+        background: rgba(148, 163, 184, 0.15);
+        color: #94a3b8;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+      }
     </style>
   </head>
   <body>
@@ -279,6 +414,7 @@
             <div class="trail-name" id="trail-name">Device Trail</div>
             <div class="trail-pill"><span class="trail-icon">&#128207;</span> <b id="trail-dist">0.00 km</b></div>
             <div class="trail-pill"><span class="trail-icon">&#128205;</span> <span id="trail-pts">0 pts</span></div>
+            <button id="follow-btn" class="follow-btn active" title="Toggle keeping camera on rider">&#127919; Follow</button>
           </div>
           <button id="trail-close" title="Hide trail">&#10005;</button>
         </div>
@@ -352,7 +488,16 @@
       const cache = {};
       const deviceDistances = {};
       const lastKnownPoints = {};
+      const previousPositions = {};
+      const currentHeadings = {};
+      const animationFrames = {};
       let firstFit = true;
+      let followMode = true;
+      let pathGlow = null;
+      let pathLine = null;
+      let pathDots = null;
+      let selectedDevice = null;
+      const PATH_LIMIT = 500;
 
       // Close trail listener
       document.getElementById("trail-close").addEventListener("click", () => {
@@ -362,6 +507,19 @@
           render();
         }
       });
+
+      // Toggle follow rider camera
+      const followBtn = document.getElementById("follow-btn");
+      if (followBtn) {
+        followBtn.addEventListener("click", () => {
+          followMode = !followMode;
+          followBtn.classList.toggle("active", followMode);
+          if (followMode && selectedDevice && cache[selectedDevice]) {
+            const dev = cache[selectedDevice];
+            map.panTo([dev.lat, dev.lng], { animate: true });
+          }
+        });
+      }
 
       // ---- distance calculation helpers ---------------------------------
       function calculateDistanceKm(points) {
@@ -381,12 +539,90 @@
         return km.toFixed(2) + " km";
       }
 
+      // ---- Swiggy / Zomato live bearing & animation helpers --------------
+      function calculateBearing(lat1, lon1, lat2, lon2) {
+        const dLat = Math.abs(lat2 - lat1);
+        const dLng = Math.abs(lon2 - lon1);
+        if (dLat < 0.00001 && dLng < 0.00001) return null;
+        const toRad = (deg) => (deg * Math.PI) / 180;
+        const toDeg = (rad) => (rad * 180) / Math.PI;
+        const y = Math.sin(toRad(lon2 - lon1)) * Math.cos(toRad(lat2));
+        const x =
+          Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+          Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(toRad(lon2 - lon1));
+        const brng = Math.atan2(y, x);
+        return (toDeg(brng) + 360) % 360;
+      }
+
+      function animateMarker(marker, startPos, endPos, durationMs = 1200, devId = null) {
+        if (devId && animationFrames[devId]) {
+          cancelAnimationFrame(animationFrames[devId]);
+        }
+        const startTime = performance.now();
+
+        function frame(now) {
+          const elapsed = now - startTime;
+          const progress = Math.min(elapsed / durationMs, 1);
+          const ease =
+            progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+
+          const lat = startPos.lat + (endPos.lat - startPos.lat) * ease;
+          const lng = startPos.lng + (endPos.lng - startPos.lng) * ease;
+
+          marker.setLatLng([lat, lng]);
+
+          if (followMode && selectedDevice === devId) {
+            map.panTo([lat, lng], { animate: false });
+          }
+
+          if (progress < 1) {
+            if (devId) animationFrames[devId] = requestAnimationFrame(frame);
+          } else {
+            if (devId) delete animationFrames[devId];
+            marker.setLatLng([endPos.lat, endPos.lng]);
+          }
+        }
+
+        if (devId) animationFrames[devId] = requestAnimationFrame(frame);
+      }
+
+      function createDeliveryIcon(name, speed, heading, isStale, isOffline) {
+        const rot = heading != null ? Math.round(heading) : 0;
+        const speedText = speed != null && speed >= 1 ? `${speed.toFixed(1)} km/h` : "Stopped";
+        const offlineClass = isOffline ? " offline" : isStale ? " stale" : "";
+
+        const html =
+          `<div class="delivery-marker-wrap${offlineClass}">` +
+            `<div class="delivery-pulse"></div>` +
+            `<div class="delivery-badge">` +
+              `<span class="badge-dot"></span>` +
+              `<span>${name} &middot; ${speedText}</span>` +
+            `</div>` +
+            `<div class="delivery-vehicle" style="transform: rotate(${rot}deg);" title="${name} (${speedText})">` +
+              `<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">` +
+                `<rect x="14" y="2" width="4" height="7" rx="2" fill="#ff5200" />` +
+                `<path d="M9 8H23" stroke="#ff5200" stroke-width="2.5" stroke-linecap="round" />` +
+                `<circle cx="8" cy="8" r="1.5" fill="#fff" />` +
+                `<circle cx="24" cy="8" r="1.5" fill="#fff" />` +
+                `<path d="M16 8V18" stroke="#ff5200" stroke-width="3.5" stroke-linecap="round" />` +
+                `<circle cx="16" cy="14" r="3" fill="#fff" />` +
+                `<rect x="12.5" y="18" width="7" height="5" rx="1.5" fill="#f97316" stroke="#fff" stroke-width="0.8" />` +
+                `<rect x="14" y="24" width="4" height="6" rx="2" fill="#ff5200" />` +
+              `</svg>` +
+            `</div>` +
+          `</div>`;
+
+        return L.divIcon({
+          html: html,
+          className: "delivery-div-icon",
+          iconSize: [48, 48],
+          iconAnchor: [24, 24],
+          popupAnchor: [0, -28],
+        });
+      }
+
       // ---- travel path state --------------------------------------------
       let supabaseClient = null;
-      let pathLine = null;
-      let pathDots = null;
-      let selectedDevice = null;
-      const PATH_LIMIT = 500;
 
       async function showPath(deviceId) {
         if (!supabaseClient) return;
@@ -429,6 +665,7 @@
       }
 
       function drawPath(points) {
+        if (pathGlow) { map.removeLayer(pathGlow); pathGlow = null; }
         if (pathLine) { map.removeLayer(pathLine); pathLine = null; }
         if (pathDots) { map.removeLayer(pathDots); pathDots = null; }
         const bar = document.getElementById("trail-bar");
@@ -437,11 +674,32 @@
           return;
         }
 
-        pathLine = L.polyline(points, { color: "#3b82f6", weight: 4, opacity: 0.85 }).addTo(map);
+        pathGlow = L.polyline(points, {
+          color: "#ff5200",
+          weight: 8,
+          opacity: 0.35,
+          lineCap: "round",
+          lineJoin: "round",
+        }).addTo(map);
+
+        pathLine = L.polyline(points, {
+          color: "#ff7a00",
+          weight: 4,
+          opacity: 0.95,
+          lineCap: "round",
+          lineJoin: "round",
+        }).addTo(map);
+
         pathDots = L.layerGroup(
-          points.map((p) => L.circleMarker(p, {
-            radius: 3, color: "#1d4ed8", fillColor: "#60a5fa", fillOpacity: 1, weight: 1
-          }))
+          points.map((p) =>
+            L.circleMarker(p, {
+              radius: 3,
+              color: "#c2410c",
+              fillColor: "#fed7aa",
+              fillOpacity: 0.9,
+              weight: 1,
+            })
+          )
         ).addTo(map);
         map.fitBounds(pathLine.getBounds(), { padding: [50, 50], maxZoom: 17 });
       }
@@ -616,14 +874,36 @@ ${pts}
             `Accuracy: ${d.accuracy == null ? "?" : Math.round(d.accuracy) + " m"}<br/>` +
             `Updated: ${timeAgo(d.updated_at)}`;
 
-          if (markers[d.device_id]) {
-            markers[d.device_id].setLatLng([d.lat, d.lng]).setPopupContent(popup);
-          } else {
-            markers[d.device_id] = L.marker([d.lat, d.lng]).addTo(map).bindPopup(popup);
+          const sc = staleClass(d.updated_at);
+          const isStale = sc === "stale";
+          const isOffline = sc === "offline";
+
+          // Calculate or preserve bearing
+          let heading = d.heading;
+          if (heading == null && previousPositions[d.device_id]) {
+            const prev = previousPositions[d.device_id];
+            const computedBearing = calculateBearing(prev.lat, prev.lng, d.lat, d.lng);
+            if (computedBearing != null) heading = computedBearing;
           }
+          if (heading != null) currentHeadings[d.device_id] = heading;
+          else heading = currentHeadings[d.device_id] || 0;
+
+          const icon = createDeliveryIcon(d.name, d.speed, heading, isStale, isOffline);
+
+          if (markers[d.device_id]) {
+            markers[d.device_id].setIcon(icon).setPopupContent(popup);
+            const prevPos = previousPositions[d.device_id];
+            if (prevPos && (prevPos.lat !== d.lat || prevPos.lng !== d.lng)) {
+              animateMarker(markers[d.device_id], prevPos, { lat: d.lat, lng: d.lng }, 1200, d.device_id);
+            } else {
+              markers[d.device_id].setLatLng([d.lat, d.lng]);
+            }
+          } else {
+            markers[d.device_id] = L.marker([d.lat, d.lng], { icon: icon }).addTo(map).bindPopup(popup);
+          }
+          previousPositions[d.device_id] = { lat: d.lat, lng: d.lng };
           bounds.push([d.lat, d.lng]);
 
-          const sc = staleClass(d.updated_at);
           const isSelected = selectedDevice === d.device_id;
 
           const card = document.createElement("div");
@@ -642,9 +922,13 @@ ${pts}
             ? `<span class="acc" title="GPS accuracy">&#127919; &plusmn;${Math.round(d.accuracy)}m</span> &middot; `
             : "";
 
+          const riderStatus = d.speed != null && d.speed >= 1.5
+            ? `<span class="rider-pill moving">&#128757; ${d.speed.toFixed(1)} km/h</span>`
+            : `<span class="rider-pill idle">&#9208; Idle</span>`;
+
           card.innerHTML =
             `<div class="device-header">` +
-              `<div class="name">${d.name}</div>` +
+              `<div class="name">${d.name} ${riderStatus}</div>` +
               `<span class="stale-dot" title="${timeAgo(d.updated_at)}"></span>` +
             `</div>` +
             `<div class="meta">${battHtml}${spdHtml}${distHtml}${accHtml}${timeAgo(d.updated_at)}</div>` +
@@ -780,7 +1064,24 @@ ${pts}
                     }
                   }
                   lastKnownPoints[row.device_id] = [row.lat, row.lng];
-                  if (row.device_id === selectedDevice) showPath(selectedDevice);
+
+                  // Live extend path lines if this device is selected
+                  if (row.device_id === selectedDevice) {
+                    if (pathLine) pathLine.addLatLng([row.lat, row.lng]);
+                    if (pathGlow) pathGlow.addLatLng([row.lat, row.lng]);
+                    if (pathDots) {
+                      L.circleMarker([row.lat, row.lng], {
+                        radius: 3,
+                        color: "#c2410c",
+                        fillColor: "#fed7aa",
+                        fillOpacity: 0.9,
+                        weight: 1,
+                      }).addTo(pathDots);
+                    }
+                    if (followMode) {
+                      map.panTo([row.lat, row.lng], { animate: true, duration: 1 });
+                    }
+                  }
                   render();
                 }
               })
