@@ -121,6 +121,7 @@
       .device .meta .batt { color: #3fb950; }
       .device .meta .spd  { color: #60a5fa; }
       .device .meta .dist { color: #f59e0b; font-weight: 500; }
+      .device .meta .acc  { color: #c084fc; }
 
       /* action buttons row */
       .device-actions {
@@ -395,12 +396,17 @@
           .from("locations")
           .select("lat,lng,recorded_at")
           .eq("device_id", deviceId)
-          .order("recorded_at", { ascending: true })
+          .order("recorded_at", { ascending: false })
           .limit(PATH_LIMIT);
 
         if (error) { warn("Could not load path: " + error.message); return; }
-        const points = (data || []).map((r) => [r.lat, r.lng]);
-        const distKm = calculateDistanceKm(points);
+        const rows = (data || []).reverse();
+        const points = rows.map((r) => [r.lat, r.lng]);
+        const calcDist = calculateDistanceKm(points);
+        const dev = cache[deviceId];
+        const distKm = (dev && dev.distance != null && !isNaN(dev.distance))
+          ? Number(dev.distance)
+          : calcDist;
         deviceDistances[deviceId] = distKm;
 
         drawPath(points);
@@ -453,6 +459,10 @@
         if (error) { warn("Could not clear history: " + error.message); return; }
 
         deviceDistances[deviceId] = 0;
+        try {
+          await supabaseClient.from("devices").update({ distance: 0 }).eq("device_id", deviceId);
+          if (cache[deviceId]) cache[deviceId].distance = 0;
+        } catch (_) {}
         if (selectedDevice === deviceId) { drawPath([]); selectedDevice = null; }
         render();
       }
@@ -593,7 +603,9 @@ ${pts}
         const bounds = [];
 
         devices.forEach((d) => {
-          const distVal = deviceDistances[d.device_id];
+          const distVal = (d.distance != null && !isNaN(d.distance))
+            ? Number(d.distance)
+            : deviceDistances[d.device_id];
           const distStr = distVal != null ? formatDistance(distVal) : "--";
 
           const popup =
@@ -623,8 +635,11 @@ ${pts}
           const spdHtml = d.speed != null
             ? `<span class="spd">&#128663; ${d.speed.toFixed(1)} km/h</span> &middot; `
             : "";
-          const distHtml = distVal != null && distVal > 0
+          const distHtml = distVal != null && distVal >= 0
             ? `<span class="dist" title="Total distance traveled">&#128207; ${distStr}</span> &middot; `
+            : "";
+          const accHtml = d.accuracy != null
+            ? `<span class="acc" title="GPS accuracy">&#127919; &plusmn;${Math.round(d.accuracy)}m</span> &middot; `
             : "";
 
           card.innerHTML =
@@ -632,7 +647,7 @@ ${pts}
               `<div class="name">${d.name}</div>` +
               `<span class="stale-dot" title="${timeAgo(d.updated_at)}"></span>` +
             `</div>` +
-            `<div class="meta">${battHtml}${spdHtml}${distHtml}${timeAgo(d.updated_at)}</div>` +
+            `<div class="meta">${battHtml}${spdHtml}${distHtml}${accHtml}${timeAgo(d.updated_at)}</div>` +
             `<div class="device-actions">` +
               `<button class="action-btn btn-csv" title="Export trail as CSV">&#128196; CSV</button>` +
               `<button class="action-btn btn-gpx" title="Export trail as GPX (Google Earth, Strava, etc.)">&#128205; GPX</button>` +
@@ -704,25 +719,31 @@ ${pts}
 
         // Calculate kilometers from recent trail points for each device
         try {
-          const { data: locHistory } = await supabase
-            .from("locations")
-            .select("device_id,lat,lng,recorded_at")
-            .order("recorded_at", { ascending: true })
-            .limit(2000);
-          if (locHistory && locHistory.length) {
-            const grouped = {};
-            locHistory.forEach((pt) => {
-              if (!grouped[pt.device_id]) grouped[pt.device_id] = [];
-              grouped[pt.device_id].push([pt.lat, pt.lng]);
-            });
-            Object.keys(grouped).forEach((devId) => {
-              deviceDistances[devId] = calculateDistanceKm(grouped[devId]);
-              if (grouped[devId].length > 0) {
-                lastKnownPoints[devId] = grouped[devId][grouped[devId].length - 1];
+          await Promise.all(
+            (data || []).map(async (dev) => {
+              if (dev.distance != null && !isNaN(dev.distance)) {
+                deviceDistances[dev.device_id] = Number(dev.distance);
+                return;
               }
-            });
-            render();
-          }
+              const { data: pts } = await supabase
+                .from("locations")
+                .select("lat,lng,recorded_at")
+                .eq("device_id", dev.device_id)
+                .order("recorded_at", { ascending: false })
+                .limit(1000);
+              if (pts && pts.length) {
+                pts.reverse();
+                const coords = pts.map((p) => [p.lat, p.lng]);
+                deviceDistances[dev.device_id] = calculateDistanceKm(coords);
+                if (coords.length > 0) {
+                  lastKnownPoints[dev.device_id] = coords[coords.length - 1];
+                }
+              } else {
+                deviceDistances[dev.device_id] = 0;
+              }
+            })
+          );
+          render();
         } catch (_) {}
 
         // Live updates to current-position table
@@ -732,7 +753,13 @@ ${pts}
               { event: "*", schema: "public", table: "devices" },
               (payload) => {
                 const row = payload.new;
-                if (row && row.device_id) { cache[row.device_id] = row; render(); }
+                if (row && row.device_id) {
+                  cache[row.device_id] = row;
+                  if (row.distance != null && !isNaN(row.distance)) {
+                    deviceDistances[row.device_id] = Number(row.distance);
+                  }
+                  render();
+                }
               })
           .subscribe();
 
@@ -744,10 +771,13 @@ ${pts}
               (payload) => {
                 const row = payload.new;
                 if (row && row.device_id) {
-                  if (lastKnownPoints[row.device_id]) {
-                    const d = L.latLng(lastKnownPoints[row.device_id][0], lastKnownPoints[row.device_id][1])
-                      .distanceTo(L.latLng(row.lat, row.lng));
-                    deviceDistances[row.device_id] = (deviceDistances[row.device_id] || 0) + (d / 1000);
+                  const dev = cache[row.device_id];
+                  if (!dev || dev.distance == null) {
+                    if (lastKnownPoints[row.device_id]) {
+                      const d = L.latLng(lastKnownPoints[row.device_id][0], lastKnownPoints[row.device_id][1])
+                        .distanceTo(L.latLng(row.lat, row.lng));
+                      deviceDistances[row.device_id] = (deviceDistances[row.device_id] || 0) + (d / 1000);
+                    }
                   }
                   lastKnownPoints[row.device_id] = [row.lat, row.lng];
                   if (row.device_id === selectedDevice) showPath(selectedDevice);

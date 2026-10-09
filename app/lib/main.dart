@@ -126,6 +126,12 @@ Future<void> onStart(ServiceInstance service) async {
     await prefs.remove('last_recorded_lat');
     await prefs.remove('last_recorded_lng');
     service.invoke('update', {'distance_km': 0.0});
+    try {
+      await Supabase.instance.client
+          .from('devices')
+          .update({'distance': 0.0})
+          .eq('device_id', deviceId);
+    } catch (_) {}
   });
 
   final settings = LocationSettings(
@@ -204,27 +210,6 @@ Future<void> onStart(ServiceInstance service) async {
           ? double.parse((pos.speed * 3.6).toStringAsFixed(2))
           : null;
 
-      final devicePayload = <String, dynamic>{
-        'device_id': deviceId,
-        'name': deviceName,
-        'lat': pos.latitude,
-        'lng': pos.longitude,
-        'battery': batteryLevel,
-        'accuracy': pos.accuracy,
-        'speed': speedKmh,
-        'updated_at': nowIso,
-      };
-
-      final locationPayload = <String, dynamic>{
-        'device_id': deviceId,
-        'lat': pos.latitude,
-        'lng': pos.longitude,
-        'battery': batteryLevel,
-        'accuracy': pos.accuracy,
-        'speed': speedKmh,
-        'recorded_at': nowIso,
-      };
-
       // Distance calculation: accumulate valid movement (>= minDistanceMeters)
       if (lastRecordedLat != null && lastRecordedLng != null) {
         final d = Geolocator.distanceBetween(
@@ -247,12 +232,47 @@ Future<void> onStart(ServiceInstance service) async {
         await prefs.setDouble('last_recorded_lat', pos.latitude);
         await prefs.setDouble('last_recorded_lng', pos.longitude);
       }
-      final double distanceKm = sessionDistanceMeters / 1000.0;
+      final double distanceKm =
+          double.parse((sessionDistanceMeters / 1000.0).toStringAsFixed(2));
+
+      final devicePayload = <String, dynamic>{
+        'device_id': deviceId,
+        'name': deviceName,
+        'lat': pos.latitude,
+        'lng': pos.longitude,
+        'battery': batteryLevel,
+        'accuracy': pos.accuracy,
+        'speed': speedKmh,
+        'updated_at': nowIso,
+      };
+
+      final locationPayload = <String, dynamic>{
+        'device_id': deviceId,
+        'lat': pos.latitude,
+        'lng': pos.longitude,
+        'battery': batteryLevel,
+        'accuracy': pos.accuracy,
+        'speed': speedKmh,
+        'recorded_at': nowIso,
+      };
 
       try {
         await flushQueue();
-        await Supabase.instance.client.from('devices').upsert(devicePayload);
-        await Supabase.instance.client.from('locations').insert(locationPayload);
+        try {
+          final devWithDistance = Map<String, dynamic>.from(devicePayload)
+            ..['distance'] = distanceKm;
+          await Supabase.instance.client.from('devices').upsert(devWithDistance);
+        } catch (_) {
+          await Supabase.instance.client.from('devices').upsert(devicePayload);
+        }
+
+        try {
+          final locWithDistance = Map<String, dynamic>.from(locationPayload)
+            ..['distance'] = distanceKm;
+          await Supabase.instance.client.from('locations').insert(locWithDistance);
+        } catch (_) {
+          await Supabase.instance.client.from('locations').insert(locationPayload);
+        }
 
         final h = now.hour.toString().padLeft(2, '0');
         final m = now.minute.toString().padLeft(2, '0');
@@ -450,6 +470,12 @@ class _HomePageState extends State<HomePage>
         await prefs.remove('last_recorded_lat');
         await prefs.remove('last_recorded_lng');
         if (mounted) setState(() => _distanceKm = 0.0);
+        try {
+          await Supabase.instance.client
+              .from('devices')
+              .update({'distance': 0.0})
+              .eq('device_id', _deviceId);
+        } catch (_) {}
       } catch (_) {}
     }
   }

@@ -15,6 +15,7 @@ create table if not exists public.devices (
     battery     integer,
     accuracy    double precision,
     speed       double precision,          -- km/h from GPS (nullable)
+    distance    double precision,          -- km from phone trip meter (nullable)
     updated_at  timestamptz not null default now()
 );
 
@@ -82,6 +83,7 @@ create table if not exists public.locations (
     battery     integer,
     accuracy    double precision,
     speed       double precision,          -- km/h from GPS (nullable)
+    distance    double precision,          -- km from phone trip meter (nullable)
     recorded_at timestamptz not null default now()
 );
 
@@ -165,6 +167,16 @@ alter table if exists public.devices
 
 alter table if exists public.locations
     add column if not exists speed double precision;   -- km/h, nullable
+
+-- =====================================================================
+-- 8) Migration: add the `distance` column (trip km) so the dashboard
+--    matches the phone app's trip meter exactly.
+-- =====================================================================
+alter table if exists public.devices
+    add column if not exists distance double precision;   -- km, nullable
+
+alter table if exists public.locations
+    add column if not exists distance double precision;   -- km, nullable
 
 -- =====================================================================
 -- SECURITY NOTE
