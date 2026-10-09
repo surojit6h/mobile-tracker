@@ -216,6 +216,9 @@ Future<void> onStart(ServiceInstance service) async {
           : null;
 
       // Distance calculation: accumulate valid movement (>= minDistanceMeters)
+      // Accuracy filter: ignore inaccurate cellular/Wi-Fi drift (> 35m)
+      final bool isAccurate = pos.accuracy <= 35.0;
+
       if (lastRecordedLat != null && lastRecordedLng != null) {
         final d = Geolocator.distanceBetween(
           lastRecordedLat!,
@@ -223,15 +226,24 @@ Future<void> onStart(ServiceInstance service) async {
           pos.latitude,
           pos.longitude,
         );
-        if (d >= AppConfig.minDistanceMeters) {
+        // Realistic movement check: prevent 3km teleport spikes in 10s
+        final bool isRealistic = d < 400.0 && (speedKmh == null || speedKmh <= 150.0);
+
+        if (d >= AppConfig.minDistanceMeters && isAccurate && isRealistic) {
           sessionDistanceMeters += d;
           lastRecordedLat = pos.latitude;
           lastRecordedLng = pos.longitude;
           await prefs.setDouble('session_distance_meters', sessionDistanceMeters);
           await prefs.setDouble('last_recorded_lat', pos.latitude);
           await prefs.setDouble('last_recorded_lng', pos.longitude);
+        } else if (d < AppConfig.minDistanceMeters && isAccurate) {
+          // Stationary with good fix: update anchor to prevent stationary drift
+          lastRecordedLat = pos.latitude;
+          lastRecordedLng = pos.longitude;
+          await prefs.setDouble('last_recorded_lat', pos.latitude);
+          await prefs.setDouble('last_recorded_lng', pos.longitude);
         }
-      } else {
+      } else if (isAccurate) {
         lastRecordedLat = pos.latitude;
         lastRecordedLng = pos.longitude;
         await prefs.setDouble('last_recorded_lat', pos.latitude);

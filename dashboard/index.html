@@ -526,9 +526,13 @@
         if (!points || points.length < 2) return 0;
         let totalMeters = 0;
         for (let i = 1; i < points.length; i++) {
-          totalMeters += L.latLng(points[i - 1][0], points[i - 1][1]).distanceTo(
+          const d = L.latLng(points[i - 1][0], points[i - 1][1]).distanceTo(
             L.latLng(points[i][0], points[i][1])
           );
+          // Ignore unrealistic GPS teleport spikes (> 1.5 km jump in a single ping)
+          if (d <= 1500) {
+            totalMeters += d;
+          }
         }
         return totalMeters / 1000;
       }
