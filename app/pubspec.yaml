@@ -55,5 +55,5 @@ flutter_launcher_icons:
   ios: false
   image_path: "assets/icon.png"
   # Adaptive icon for modern Android (foreground pin on blue background).
-  adaptive_icon_background: "#3B82F6"
+  adaptive_icon_background: "#07122B"
   adaptive_icon_foreground: "assets/icon.png"
