@@ -96,12 +96,12 @@ jobs:
             echo "has_keystore=true" >> $GITHUB_OUTPUT
 
             # Configure key.properties
-            cat <<EOF > key.properties
-storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-keyPassword=${{ secrets.KEY_PASSWORD }}
-keyAlias=${{ secrets.KEY_ALIAS }}
-storeFile=upload-keystore.jks
-EOF
+            {
+              echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}"
+              echo "keyPassword=${{ secrets.KEY_PASSWORD }}"
+              echo "keyAlias=${{ secrets.KEY_ALIAS }}"
+              echo "storeFile=upload-keystore.jks"
+            } > key.properties
 
             # Configure Gradle signing
             python3 ../../.github/scripts/configure-signing.py .
