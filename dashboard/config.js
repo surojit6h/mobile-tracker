@@ -16,4 +16,5 @@ window.APP_CONFIG = {
   // MapTiler Cloud > API Keys. Safe to expose in client code (it's a
   // public map key). Restrict it to your domain later in MapTiler if you like.
   MAPTILER_KEY: "gqz3V2e5GO51SIJfqYBz",
+  SUPER_ADMIN_PIN: "admin123", // Master PIN to access Admin Portal and manage all companies
 };

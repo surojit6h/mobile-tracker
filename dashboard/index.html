@@ -123,6 +123,29 @@
       .device .meta .dist { color: #f59e0b; font-weight: 500; }
       .device .meta .acc  { color: #c084fc; }
 
+      .device-phone {
+        margin: 2px 0 6px;
+        font-size: 11.5px;
+      }
+      .phone-link {
+        color: #38bdf8;
+        text-decoration: none;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 6px;
+        background: rgba(56, 189, 248, 0.08);
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        border-radius: 6px;
+        transition: all 0.15s ease;
+      }
+      .phone-link:hover {
+        color: #e0f2fe;
+        background: rgba(56, 189, 248, 0.2);
+        border-color: #38bdf8;
+      }
+
       /* action buttons row */
       .device-actions {
         display: flex;
@@ -388,6 +411,110 @@
         color: #94a3b8;
         border: 1px solid rgba(148, 163, 184, 0.25);
       }
+
+      /* Multi-tenant styles */
+      .tenant-chip-wrap {
+        margin: 10px 0 6px;
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 8px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .tenant-chip-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .tenant-chip-icon { font-size: 16px; flex-shrink: 0; }
+      .tenant-chip-text { min-width: 0; }
+      .tenant-chip-name {
+        font-size: 13px; font-weight: 600; color: #f8fafc;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .tenant-chip-code { font-size: 10px; color: #94a3b8; font-weight: 500; }
+      .tenant-btn-switch {
+        background: #1e293b; color: #38bdf8; border: 1px solid #0284c7;
+        border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 600;
+        cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+      }
+      .tenant-btn-switch:hover { background: #0284c7; color: #fff; }
+      .admin-badge-btn {
+        background: rgba(245, 158, 11, 0.15); color: #fbbf24;
+        border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 6px;
+        padding: 3px 8px; font-size: 11px; font-weight: 700; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s;
+      }
+      .admin-badge-btn:hover { background: #f59e0b; color: #000; }
+      .comp-tag {
+        background: #1e293b; color: #93c5fd; border: 1px solid #3b82f640;
+        border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: 600;
+        margin-left: 6px; vertical-align: middle;
+      }
+
+      /* Modals */
+      .modal-overlay {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(6px);
+        z-index: 2500; display: flex; align-items: center; justify-content: center;
+        padding: 16px;
+      }
+      .modal-box {
+        background: #0f172a; border: 1px solid #334155; border-radius: 16px;
+        width: 100%; max-width: 440px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+        overflow: hidden; color: #f8fafc;
+      }
+      .modal-box.wide { max-width: 720px; }
+      .modal-head {
+        padding: 16px 20px; border-bottom: 1px solid #1e293b;
+        display: flex; align-items: center; justify-content: space-between;
+      }
+      .modal-head h3 { font-size: 16px; font-weight: 700; margin: 0; color: #f8fafc; }
+      .modal-close-x {
+        background: none; border: none; color: #94a3b8; font-size: 20px;
+        cursor: pointer; padding: 2px 6px; border-radius: 4px; line-height: 1;
+      }
+      .modal-close-x:hover { color: #fff; background: #1e293b; }
+      .modal-nav {
+        display: flex; border-bottom: 1px solid #1e293b; background: #0b1120;
+      }
+      .modal-tab-btn {
+        flex: 1; padding: 10px; background: none; border: none; color: #94a3b8;
+        font-size: 12px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent;
+      }
+      .modal-tab-btn.active { color: #38bdf8; border-bottom-color: #38bdf8; background: #0f172a; }
+      .modal-body { padding: 20px; max-height: 80vh; overflow-y: auto; }
+      .form-label { display: block; font-size: 12px; color: #cbd5e1; margin-bottom: 6px; font-weight: 500; }
+      .form-input {
+        width: 100%; background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+        color: #f8fafc; padding: 9px 12px; font-size: 13px; margin-bottom: 14px; outline: none;
+        box-sizing: border-box;
+      }
+      .form-input:focus { border-color: #38bdf8; }
+      .btn-submit {
+        width: 100%; background: #2563eb; color: #fff; border: none; border-radius: 8px;
+        padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s;
+      }
+      .btn-submit:hover { background: #1d4ed8; }
+      .modal-alert {
+        padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 14px; display: none;
+      }
+      .modal-alert.error { background: #451a1a; border: 1px solid #7f1d1d; color: #fca5a5; }
+      .modal-alert.success { background: #143522; border: 1px solid #166534; color: #86efac; }
+      .comp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      .comp-table th { text-align: left; padding: 8px 10px; color: #94a3b8; border-bottom: 1px solid #334155; font-size: 11px; text-transform: uppercase; }
+      .comp-table td { padding: 10px; border-bottom: 1px solid #1e293b; color: #e2e8f0; }
+      .btn-table-action {
+        padding: 3px 8px; font-size: 11px; border-radius: 4px; cursor: pointer; border: 1px solid;
+        background: transparent; margin-right: 4px;
+      }
+      .btn-table-view { color: #38bdf8; border-color: #0284c7; }
+      .btn-table-view:hover { background: #0284c7; color: #fff; }
+      .btn-table-del { color: #f87171; border-color: #b91c1c; }
+      .btn-table-del:hover { background: #b91c1c; color: #fff; }
     </style>
   </head>
   <body>
@@ -396,13 +523,29 @@
       <button id="toggle" title="Show/hide panel">&#9776;</button>
       <div id="sidebar">
         <div id="sidebar-header">
-          <h1>Mobile Tracker</h1>
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <h1>Mobile Tracker</h1>
+            <button id="btn-admin-portal" class="admin-badge-btn" title="Open Admin Portal">👑 Admin</button>
+          </div>
           <div class="sub">Live device locations &middot; realtime</div>
+
+          <!-- Active Tenant / Company Chip -->
+          <div class="tenant-chip-wrap">
+            <div class="tenant-chip-info">
+              <span class="tenant-chip-icon">🏢</span>
+              <div class="tenant-chip-text">
+                <div id="tenant-chip-name" class="tenant-chip-name">Main Fleet</div>
+                <div id="tenant-chip-code" class="tenant-chip-code">CODE: DEFAULT</div>
+              </div>
+            </div>
+            <button id="btn-switch-tenant" class="tenant-btn-switch" title="Switch company workspace">Switch</button>
+          </div>
+
           <div id="device-summary"></div>
         </div>
         <div id="search-wrap">
           <span id="search-icon">&#128269;</span>
-          <input id="search" type="text" placeholder="Search devices&hellip;" autocomplete="off" />
+          <input id="search" type="text" placeholder="Search devices or phone&hellip;" autocomplete="off" />
         </div>
         <div id="list"><div id="empty">Connecting&hellip;</div></div>
         <div id="stale-alert">&#9888; One or more devices may be offline (no update &gt;15 min).</div>
@@ -417,6 +560,94 @@
             <button id="follow-btn" class="follow-btn active" title="Toggle keeping camera on rider">&#127919; Follow</button>
           </div>
           <button id="trail-close" title="Hide trail">&#10005;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Company Switch & Login Modal -->
+    <div id="login-modal" class="modal-overlay" style="display: none;">
+      <div class="modal-box">
+        <div class="modal-head">
+          <h3 id="login-modal-title">Select Company Workspace</h3>
+          <button id="close-login-modal" class="modal-close-x">&times;</button>
+        </div>
+        <div class="modal-nav">
+          <button id="tab-comp-login" class="modal-tab-btn active">Company Login</button>
+          <button id="tab-super-admin" class="modal-tab-btn">Super Admin</button>
+        </div>
+        <div class="modal-body">
+          <div id="panel-comp-login">
+            <div class="modal-alert error" id="comp-login-error"></div>
+            <label class="form-label">Company Code (Assigned to your fleet)</label>
+            <input id="login-comp-code" class="form-input" type="text" placeholder="e.g. SWIFT or DEFAULT" style="text-transform: uppercase;" />
+            <label class="form-label">Admin PIN</label>
+            <input id="login-comp-pin" class="form-input" type="password" placeholder="e.g. 1234" />
+            <button id="submit-comp-login" class="btn-submit">Enter Fleet Dashboard</button>
+          </div>
+          <div id="panel-super-admin" style="display: none;">
+            <div class="modal-alert error" id="super-admin-error"></div>
+            <label class="form-label">Master Admin PIN</label>
+            <input id="login-super-pin" class="form-input" type="password" placeholder="Configured in config.js (admin123)" />
+            <button id="submit-super-login" class="btn-submit" style="background: #d97706;">Enter Super Admin Portal</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Super Admin Management Modal -->
+    <div id="admin-modal" class="modal-overlay" style="display: none;">
+      <div class="modal-box wide">
+        <div class="modal-head">
+          <h3>👑 Super Admin: Company Management</h3>
+          <button id="close-admin-modal" class="modal-close-x">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
+            <button id="btn-view-global" class="tenant-btn-switch" style="padding: 7px 12px; font-size: 12px; background: #0284c7; color: #fff;">🌐 View All Fleets Combined</button>
+            <button id="btn-toggle-create" class="tenant-btn-switch" style="padding: 7px 12px; font-size: 12px; background: #16a34a; border-color: #22c55e; color: #fff;">+ Create New Company</button>
+          </div>
+
+          <!-- Create Company Box -->
+          <div id="create-comp-box" style="display: none; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 14px; margin-bottom: 16px;">
+            <h4 style="margin: 0 0 10px; font-size: 13px; color: #38bdf8;">Add New Company / Tenant</h4>
+            <div class="modal-alert error" id="create-error"></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+              <div>
+                <label class="form-label">Company Name</label>
+                <input id="new-comp-name" class="form-input" type="text" placeholder="e.g. Swift Logistics" style="margin-bottom: 0;" />
+              </div>
+              <div>
+                <label class="form-label">Company Code (For drivers)</label>
+                <input id="new-comp-code" class="form-input" type="text" placeholder="e.g. SWIFT" style="text-transform: uppercase; margin-bottom: 0;" />
+              </div>
+              <div>
+                <label class="form-label">Company PIN</label>
+                <input id="new-comp-pin" class="form-input" type="text" placeholder="e.g. 1234" style="margin-bottom: 0;" />
+              </div>
+            </div>
+            <div style="margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end;">
+              <button id="btn-cancel-create" class="tenant-btn-switch" style="border-color: #64748b; color: #cbd5e1;">Cancel</button>
+              <button id="btn-save-company" class="btn-submit" style="width: auto; padding: 7px 16px; background: #16a34a;">Save Company</button>
+            </div>
+          </div>
+
+          <!-- Companies Table -->
+          <div style="overflow-x: auto; max-height: 380px;">
+            <table class="comp-table">
+              <thead>
+                <tr>
+                  <th>Company Name</th>
+                  <th>Driver Code</th>
+                  <th>Admin PIN</th>
+                  <th>Active Drivers</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="comp-table-body">
+                <tr><td colspan="5" style="text-align: center; color: #94a3b8; padding: 20px;">Loading companies...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -839,7 +1070,11 @@ ${pts}
       function render() {
         const allDevices = Object.values(cache);
         const devices = searchQuery
-          ? allDevices.filter((d) => d.name.toLowerCase().includes(searchQuery))
+          ? allDevices.filter((d) => {
+              const nameMatch = d.name && d.name.toLowerCase().includes(searchQuery);
+              const phoneMatch = d.phone && d.phone.toLowerCase().includes(searchQuery);
+              return nameMatch || phoneMatch;
+            })
           : allDevices;
 
         const list = document.getElementById("list");
@@ -865,13 +1100,29 @@ ${pts}
         const bounds = [];
 
         devices.forEach((d) => {
+          // Extract phone number from d.phone or from name formatted as "Name (Phone)"
+          let phone = d.phone;
+          let displayName = d.name || "Device";
+          if (!phone) {
+            const m = displayName.match(/\(([\d\+\s\-]{6,})\)/);
+            if (m) {
+              phone = m[1].trim();
+              displayName = displayName.replace(/\s*\([\d\+\s\-]{6,}\)/, "").trim();
+            }
+          }
+
+          const phoneHtml = phone
+            ? `<div class="device-phone"><a href="tel:${phone}" class="phone-link" onclick="event.stopPropagation()">📞 ${phone}</a></div>`
+            : "";
+
           const distVal = (d.distance != null && !isNaN(d.distance))
             ? Number(d.distance)
             : deviceDistances[d.device_id];
           const distStr = distVal != null ? formatDistance(distVal) : "--";
 
           const popup =
-            `<b>${d.name}</b><br/>` +
+            `<b>${displayName}</b><br/>` +
+            (phone ? `Phone: <a href="tel:${phone}" style="color:#38bdf8;text-decoration:none;font-weight:600;">${phone}</a><br/>` : "") +
             `Distance: ${distStr}<br/>` +
             `Battery: ${d.battery == null ? "?" : d.battery + "%"}<br/>` +
             `Speed: ${d.speed == null ? "?" : d.speed.toFixed(1) + " km/h"}<br/>` +
@@ -892,7 +1143,7 @@ ${pts}
           if (heading != null) currentHeadings[d.device_id] = heading;
           else heading = currentHeadings[d.device_id] || 0;
 
-          const icon = createDeliveryIcon(d.name, d.speed, heading, isStale, isOffline);
+          const icon = createDeliveryIcon(displayName, d.speed, heading, isStale, isOffline);
 
           if (markers[d.device_id]) {
             markers[d.device_id].setIcon(icon).setPopupContent(popup);
@@ -930,11 +1181,16 @@ ${pts}
             ? `<span class="rider-pill moving">&#128757; ${d.speed.toFixed(1)} km/h</span>`
             : `<span class="rider-pill idle">&#9208; Idle</span>`;
 
+          const compTagHtml = (activeTenant.code === 'ALL' && d.company_code)
+            ? `<span class="comp-tag" title="Company workspace">🏢 ${d.company_code}</span>`
+            : "";
+
           card.innerHTML =
             `<div class="device-header">` +
-              `<div class="name">${d.name} ${riderStatus}</div>` +
+              `<div class="name">${displayName} ${riderStatus}${compTagHtml}</div>` +
               `<span class="stale-dot" title="${timeAgo(d.updated_at)}"></span>` +
             `</div>` +
+            phoneHtml +
             `<div class="meta">${battHtml}${spdHtml}${distHtml}${accHtml}${timeAgo(d.updated_at)}</div>` +
             `<div class="device-actions">` +
               `<button class="action-btn btn-csv" title="Export trail as CSV">&#128196; CSV</button>` +
@@ -984,28 +1240,152 @@ ${pts}
         }
       }
 
-      // ---- Supabase -----------------------------------------------------
-      async function start() {
-        if (
-          !cfg.SUPABASE_URL ||
-          cfg.SUPABASE_URL.includes("YOUR-PROJECT") ||
-          !cfg.SUPABASE_ANON_KEY ||
-          cfg.SUPABASE_ANON_KEY.includes("YOUR-ANON")
-        ) {
-          warn("Edit config.js and add your Supabase URL + anon key.");
-          document.getElementById("list").innerHTML = '<div id="empty">Not configured.</div>';
+      // Multi-tenant state
+      const DEFAULT_TENANT = { code: "DEFAULT", name: "Main Fleet", isSuperAdmin: false };
+      let activeTenant = JSON.parse(localStorage.getItem("tracker_tenant")) || DEFAULT_TENANT;
+      let cachedCompanies = [];
+      let realtimeChannel = null;
+
+      function updateTenantBadge() {
+        const nameEl = document.getElementById("tenant-chip-name");
+        const codeEl = document.getElementById("tenant-chip-code");
+        if (nameEl) nameEl.textContent = activeTenant.isSuperAdmin && activeTenant.code === "ALL"
+          ? "All Companies (Global)"
+          : activeTenant.name;
+        if (codeEl) codeEl.textContent = activeTenant.isSuperAdmin && activeTenant.code === "ALL"
+          ? "SUPER ADMIN"
+          : `CODE: ${activeTenant.code}`;
+      }
+
+      async function fetchCompanies() {
+        if (!supabaseClient) return [];
+        try {
+          const { data, error } = await supabaseClient
+            .from("companies")
+            .select("*")
+            .order("created_at", { ascending: true });
+          if (error) return [];
+          cachedCompanies = data || [];
+          return cachedCompanies;
+        } catch (_) {
+          return [];
+        }
+      }
+
+      function openLoginModal() {
+        document.getElementById("login-modal").style.display = "flex";
+        document.getElementById("comp-login-error").style.display = "none";
+        document.getElementById("super-admin-error").style.display = "none";
+      }
+
+      function closeLoginModal() {
+        document.getElementById("login-modal").style.display = "none";
+      }
+
+      async function openAdminModal() {
+        document.getElementById("admin-modal").style.display = "flex";
+        document.getElementById("create-comp-box").style.display = "none";
+        await renderCompaniesTable();
+      }
+
+      function closeAdminModal() {
+        document.getElementById("admin-modal").style.display = "none";
+      }
+
+      async function renderCompaniesTable() {
+        const tbody = document.getElementById("comp-table-body");
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:15px; color:#94a3b8;">Loading companies...</td></tr>';
+        const comps = await fetchCompanies();
+        if (!comps.length) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:15px; color:#94a3b8;">No companies found. Create one above or ensure setup.sql migration 11 was executed.</td></tr>';
           return;
         }
 
-        const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-        supabaseClient = supabase;
+        // Count devices per company
+        const countMap = {};
+        try {
+          const { data: allDevs } = await supabaseClient.from("devices").select("company_code");
+          (allDevs || []).forEach((d) => {
+            const c = (d.company_code || "DEFAULT").toUpperCase();
+            countMap[c] = (countMap[c] || 0) + 1;
+          });
+        } catch (_) {}
 
-        const { data, error } = await supabase.from("devices").select("*");
+        tbody.innerHTML = comps.map((c) => {
+          const count = countMap[c.code.toUpperCase()] || 0;
+          return `
+            <tr>
+              <td><b>${c.name}</b></td>
+              <td><span style="background:#1e293b; padding:2px 6px; border-radius:4px; font-weight:700; color:#38bdf8;">${c.code}</span></td>
+              <td><code>${c.admin_pin}</code></td>
+              <td>${count} active ${count === 1 ? 'driver' : 'drivers'}</td>
+              <td>
+                <button class="btn-table-action btn-table-view" onclick="switchCompanyWorkspace('${c.code}', '${c.name.replace(/'/g, "\\'")}')">Open Fleet</button>
+                ${c.code !== 'DEFAULT' ? `<button class="btn-table-action btn-table-del" onclick="deleteCompanyRow('${c.id}', '${c.code}', '${c.name.replace(/'/g, "\\'")}')">&times; Delete</button>` : ''}
+              </td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      window.switchCompanyWorkspace = function(code, name) {
+        activeTenant = { code: code.toUpperCase(), name: name, isSuperAdmin: activeTenant.isSuperAdmin };
+        localStorage.setItem("tracker_tenant", JSON.stringify(activeTenant));
+        updateTenantBadge();
+        closeAdminModal();
+        closeLoginModal();
+        loadDevices();
+      };
+
+      window.deleteCompanyRow = async function(id, code, name) {
+        if (!window.confirm(`Delete company "${name}" (Code: ${code})?\nDrivers using this code will stop appearing in this company view.`)) return;
+        try {
+          const { error } = await supabaseClient.from("companies").delete().eq("id", id);
+          if (error) { alert("Could not delete company: " + error.message); return; }
+          await renderCompaniesTable();
+        } catch (e) {
+          alert("Error: " + e.message);
+        }
+      };
+
+      async function loadDevices() {
+        if (!supabaseClient) return;
+
+        // Clear existing markers
+        Object.keys(markers).forEach((id) => {
+          map.removeLayer(markers[id]);
+          delete markers[id];
+        });
+        Object.keys(cache).forEach((k) => delete cache[k]);
+        if (pathLine) { map.removeLayer(pathLine); pathLine = null; }
+        if (pathGlow) { map.removeLayer(pathGlow); pathGlow = null; }
+        if (pathDots) { map.removeLayer(pathDots); pathDots = null; }
+        document.getElementById("trail-bar").style.display = "none";
+        selectedDevice = null;
+        firstFit = true;
+
+        let query = supabaseClient.from("devices").select("*");
+        if (!activeTenant.isSuperAdmin || activeTenant.code !== "ALL") {
+          if (activeTenant.code === "DEFAULT") {
+            query = query.or("company_code.eq.DEFAULT,company_code.is.null");
+          } else {
+            query = query.eq("company_code", activeTenant.code);
+          }
+        }
+
+        let { data, error } = await query;
+        // Fallback if company_code column hasn't been created yet in Supabase
+        if (error && error.message && error.message.includes("company_code")) {
+          const res = await supabaseClient.from("devices").select("*");
+          data = res.data;
+          error = null;
+        }
+
         if (error) { warn("Supabase error: " + error.message); return; }
-        data.forEach((row) => (cache[row.device_id] = row));
+        (data || []).forEach((row) => (cache[row.device_id] = row));
         render();
 
-        // Calculate kilometers from recent trail points for each device
+        // Calculate distances
         try {
           await Promise.all(
             (data || []).map(async (dev) => {
@@ -1013,7 +1393,7 @@ ${pts}
                 deviceDistances[dev.device_id] = Number(dev.distance);
                 return;
               }
-              const { data: pts } = await supabase
+              const { data: pts } = await supabaseClient
                 .from("locations")
                 .select("lat,lng,recorded_at")
                 .eq("device_id", dev.device_id)
@@ -1033,6 +1413,170 @@ ${pts}
           );
           render();
         } catch (_) {}
+      }
+
+      function setupMultiTenantEvents() {
+        document.getElementById("btn-switch-tenant").addEventListener("click", openLoginModal);
+        document.getElementById("close-login-modal").addEventListener("click", closeLoginModal);
+        document.getElementById("btn-admin-portal").addEventListener("click", () => {
+          if (activeTenant.isSuperAdmin) {
+            openAdminModal();
+          } else {
+            openLoginModal();
+            // Switch to super admin tab
+            document.getElementById("tab-super-admin").click();
+          }
+        });
+        document.getElementById("close-admin-modal").addEventListener("click", closeAdminModal);
+
+        // Login tabs
+        const tabComp = document.getElementById("tab-comp-login");
+        const tabSuper = document.getElementById("tab-super-admin");
+        const panelComp = document.getElementById("panel-comp-login");
+        const panelSuper = document.getElementById("panel-super-admin");
+
+        tabComp.addEventListener("click", () => {
+          tabComp.classList.add("active");
+          tabSuper.classList.remove("active");
+          panelComp.style.display = "block";
+          panelSuper.style.display = "none";
+        });
+
+        tabSuper.addEventListener("click", () => {
+          tabSuper.classList.add("active");
+          tabComp.classList.remove("active");
+          panelSuper.style.display = "block";
+          panelComp.style.display = "none";
+        });
+
+        // Company Login Submit
+        document.getElementById("submit-comp-login").addEventListener("click", async () => {
+          const codeInput = document.getElementById("login-comp-code").value.trim().toUpperCase();
+          const pinInput = document.getElementById("login-comp-pin").value.trim();
+          const errEl = document.getElementById("comp-login-error");
+          errEl.style.display = "none";
+
+          if (!codeInput) {
+            errEl.textContent = "Please enter a Company Code.";
+            errEl.style.display = "block";
+            return;
+          }
+
+          const comps = await fetchCompanies();
+          const matched = comps.find((c) => c.code.toUpperCase() === codeInput);
+          if (!matched) {
+            if (codeInput === "DEFAULT") {
+              switchCompanyWorkspace("DEFAULT", "Main Fleet");
+              return;
+            }
+            errEl.textContent = `Company with code "${codeInput}" not found.`;
+            errEl.style.display = "block";
+            return;
+          }
+
+          if (matched.admin_pin && matched.admin_pin !== pinInput) {
+            errEl.textContent = "Incorrect PIN for this company.";
+            errEl.style.display = "block";
+            return;
+          }
+
+          switchCompanyWorkspace(matched.code, matched.name);
+        });
+
+        // Super Admin Login Submit
+        document.getElementById("submit-super-login").addEventListener("click", () => {
+          const pinInput = document.getElementById("login-super-pin").value.trim();
+          const masterPin = cfg.SUPER_ADMIN_PIN || "admin123";
+          const errEl = document.getElementById("super-admin-error");
+          errEl.style.display = "none";
+
+          if (pinInput !== masterPin) {
+            errEl.textContent = "Incorrect Super Admin PIN.";
+            errEl.style.display = "block";
+            return;
+          }
+
+          activeTenant.isSuperAdmin = true;
+          localStorage.setItem("tracker_tenant", JSON.stringify(activeTenant));
+          closeLoginModal();
+          openAdminModal();
+        });
+
+        // Super Admin Global View
+        document.getElementById("btn-view-global").addEventListener("click", () => {
+          activeTenant = { code: "ALL", name: "All Fleets (Super Admin)", isSuperAdmin: true };
+          localStorage.setItem("tracker_tenant", JSON.stringify(activeTenant));
+          updateTenantBadge();
+          closeAdminModal();
+          loadDevices();
+        });
+
+        // Toggle Create Company Form
+        const createBox = document.getElementById("create-comp-box");
+        document.getElementById("btn-toggle-create").addEventListener("click", () => {
+          createBox.style.display = createBox.style.display === "none" ? "block" : "none";
+          document.getElementById("create-error").style.display = "none";
+        });
+        document.getElementById("btn-cancel-create").addEventListener("click", () => {
+          createBox.style.display = "none";
+        });
+
+        // Save New Company
+        document.getElementById("btn-save-company").addEventListener("click", async () => {
+          const name = document.getElementById("new-comp-name").value.trim();
+          const code = document.getElementById("new-comp-code").value.trim().toUpperCase();
+          const pin = document.getElementById("new-comp-pin").value.trim() || "1234";
+          const errEl = document.getElementById("create-error");
+          errEl.style.display = "none";
+
+          if (!name || !code) {
+            errEl.textContent = "Company Name and Driver Code are required.";
+            errEl.style.display = "block";
+            return;
+          }
+
+          try {
+            const id = "comp_" + Date.now();
+            const { error } = await supabaseClient.from("companies").insert({
+              id, code, name, admin_pin: pin
+            });
+            if (error) {
+              errEl.textContent = "Error creating company: " + error.message;
+              errEl.style.display = "block";
+              return;
+            }
+            createBox.style.display = "none";
+            document.getElementById("new-comp-name").value = "";
+            document.getElementById("new-comp-code").value = "";
+            document.getElementById("new-comp-pin").value = "";
+            await renderCompaniesTable();
+          } catch (e) {
+            errEl.textContent = "Error: " + e.message;
+            errEl.style.display = "block";
+          }
+        });
+      }
+
+      // ---- Supabase -----------------------------------------------------
+      async function start() {
+        if (
+          !cfg.SUPABASE_URL ||
+          cfg.SUPABASE_URL.includes("YOUR-PROJECT") ||
+          !cfg.SUPABASE_ANON_KEY ||
+          cfg.SUPABASE_ANON_KEY.includes("YOUR-ANON")
+        ) {
+          warn("Edit config.js and add your Supabase URL + anon key.");
+          document.getElementById("list").innerHTML = '<div id="empty">Not configured.</div>';
+          return;
+        }
+
+        const supabase = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+        supabaseClient = supabase;
+
+        updateTenantBadge();
+        setupMultiTenantEvents();
+        await fetchCompanies();
+        await loadDevices();
 
         // Live updates to current-position table
         supabase
@@ -1041,13 +1585,20 @@ ${pts}
               { event: "*", schema: "public", table: "devices" },
               (payload) => {
                 const row = payload.new;
-                if (row && row.device_id) {
-                  cache[row.device_id] = row;
-                  if (row.distance != null && !isNaN(row.distance)) {
-                    deviceDistances[row.device_id] = Number(row.distance);
+                if (!row || !row.device_id) return;
+                // Filter by active tenant unless in global view
+                if (!activeTenant.isSuperAdmin || activeTenant.code !== "ALL") {
+                  const cCode = (row.company_code || "DEFAULT").toUpperCase();
+                  if (cCode !== activeTenant.code.toUpperCase()) {
+                    return;
                   }
-                  render();
                 }
+
+                cache[row.device_id] = row;
+                if (row.distance != null && !isNaN(row.distance)) {
+                  deviceDistances[row.device_id] = Number(row.distance);
+                }
+                render();
               })
           .subscribe();
 
@@ -1099,3 +1650,4 @@ ${pts}
     </script>
   </body>
 </html>
+

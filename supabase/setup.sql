@@ -17,6 +17,8 @@ create table if not exists public.devices (
     speed       double precision,          -- km/h from GPS (nullable)
     distance    double precision,          -- km from phone trip meter (nullable)
     heading     double precision,          -- bearing/rotation in degrees 0-360 (nullable)
+    phone       text,                      -- device mobile/phone number (nullable)
+    company_code text not null default 'DEFAULT', -- tenant code for multi-tenancy
     updated_at  timestamptz not null default now()
 );
 
@@ -189,6 +191,59 @@ alter table if exists public.devices
 
 alter table if exists public.locations
     add column if not exists heading double precision;   -- degrees 0-360, nullable
+
+-- =====================================================================
+-- 10) Migration: add `phone` column for mobile number.
+-- =====================================================================
+alter table if exists public.devices
+    add column if not exists phone text;
+
+-- =====================================================================
+-- 11) Multi-Tenancy: Companies / Tenants table & device association
+-- =====================================================================
+create table if not exists public.companies (
+    id          text primary key,
+    code        text not null unique,
+    name        text not null,
+    admin_pin   text not null default '1234',
+    created_at  timestamptz not null default now()
+);
+
+alter table public.companies enable row level security;
+
+drop policy if exists "read companies" on public.companies;
+create policy "read companies" on public.companies for select using (true);
+
+drop policy if exists "insert companies" on public.companies;
+create policy "insert companies" on public.companies for insert with check (true);
+
+drop policy if exists "update companies" on public.companies;
+create policy "update companies" on public.companies for update using (true) with check (true);
+
+drop policy if exists "delete companies" on public.companies;
+create policy "delete companies" on public.companies for delete using (true);
+
+do $$
+begin
+  alter publication supabase_realtime add table public.companies;
+exception
+  when duplicate_object then null;
+end $$;
+
+-- Insert default company so existing devices work automatically
+insert into public.companies (id, code, name, admin_pin)
+values ('comp_default', 'DEFAULT', 'Main Fleet', '1234')
+on conflict (code) do nothing;
+
+-- Add company_code to devices and locations
+alter table if exists public.devices
+    add column if not exists company_code text not null default 'DEFAULT';
+
+alter table if exists public.locations
+    add column if not exists company_code text not null default 'DEFAULT';
+
+create index if not exists devices_company_code_idx on public.devices (company_code);
+create index if not exists locations_company_code_idx on public.locations (company_code);
 
 -- =====================================================================
 -- SECURITY NOTE

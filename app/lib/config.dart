@@ -20,4 +20,7 @@ class AppConfig {
   // Only send a new point if the phone moved at least this many meters.
   // 10m allows fluid street-level updates.
   static const int minDistanceMeters = 10;
+
+  // Default company code for multi-tenancy.
+  static const String defaultCompanyCode = 'DEFAULT';
 }

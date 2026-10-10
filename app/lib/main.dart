@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -12,6 +13,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
+
+const MethodChannel _simChannel = MethodChannel('com.surojitsen.mobiletracker/sim');
 
 const String _notifChannelId = 'tracker_foreground';
 const int _notifId = 7312;
@@ -111,6 +114,8 @@ Future<void> onStart(ServiceInstance service) async {
   final prefs = await SharedPreferences.getInstance();
   final deviceId = prefs.getString('device_id') ?? 'unknown';
   final deviceName = prefs.getString('device_name') ?? 'My device';
+  final devicePhone = prefs.getString('device_phone') ?? '';
+  final deviceCompany = (prefs.getString('company_code') ?? AppConfig.defaultCompanyCode).toUpperCase().trim();
   final battery = Battery();
   Position? pending;
 
@@ -255,6 +260,7 @@ Future<void> onStart(ServiceInstance service) async {
       final devicePayload = <String, dynamic>{
         'device_id': deviceId,
         'name': deviceName,
+        'company_code': deviceCompany,
         'lat': pos.latitude,
         'lng': pos.longitude,
         'battery': batteryLevel,
@@ -266,6 +272,7 @@ Future<void> onStart(ServiceInstance service) async {
 
       final locationPayload = <String, dynamic>{
         'device_id': deviceId,
+        'company_code': deviceCompany,
         'lat': pos.latitude,
         'lng': pos.longitude,
         'battery': batteryLevel,
@@ -280,19 +287,32 @@ Future<void> onStart(ServiceInstance service) async {
         try {
           final devWithDistance = Map<String, dynamic>.from(devicePayload)
             ..['distance'] = distanceKm;
+          if (devicePhone.isNotEmpty) {
+            devWithDistance['phone'] = devicePhone;
+          }
           await Supabase.instance.client.from('devices').upsert(devWithDistance);
         } catch (_) {
-          final basicPayload = <String, dynamic>{
-            'device_id': deviceId,
-            'name': deviceName,
-            'lat': pos.latitude,
-            'lng': pos.longitude,
-            'battery': batteryLevel,
-            'accuracy': pos.accuracy,
-            'speed': speedKmh,
-            'updated_at': nowIso,
-          };
-          await Supabase.instance.client.from('devices').upsert(basicPayload);
+          try {
+            final devWithDist = Map<String, dynamic>.from(devicePayload)
+              ..remove('company_code')
+              ..['distance'] = distanceKm;
+            if (devicePhone.isNotEmpty) {
+              devWithDist['name'] = '$deviceName ($devicePhone)';
+            }
+            await Supabase.instance.client.from('devices').upsert(devWithDist);
+          } catch (_) {
+            final basicPayload = <String, dynamic>{
+              'device_id': deviceId,
+              'name': devicePhone.isNotEmpty ? '$deviceName ($devicePhone)' : deviceName,
+              'lat': pos.latitude,
+              'lng': pos.longitude,
+              'battery': batteryLevel,
+              'accuracy': pos.accuracy,
+              'speed': speedKmh,
+              'updated_at': nowIso,
+            };
+            await Supabase.instance.client.from('devices').upsert(basicPayload);
+          }
         }
 
         try {
@@ -398,6 +418,8 @@ class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _service = FlutterBackgroundService();
   final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _companyController = TextEditingController();
 
   bool _tracking = false;
   String _status = 'Checking status…';
@@ -466,6 +488,8 @@ class _HomePageState extends State<HomePage>
     _pulseController.dispose();
     _updateSub?.cancel();
     _nameController.dispose();
+    _phoneController.dispose();
+    _companyController.dispose();
     super.dispose();
   }
 
@@ -555,18 +579,82 @@ class _HomePageState extends State<HomePage>
         await prefs.setString('device_id', id);
       }
       final name = prefs.getString('device_name') ?? 'My device';
+      final phone = prefs.getString('device_phone') ?? '';
+      final company = prefs.getString('company_code') ?? AppConfig.defaultCompanyCode;
       if (!mounted) return;
       setState(() {
         _deviceId = id!;
         _nameController.text = name;
+        _phoneController.text = phone;
+        _companyController.text = company;
       });
+
+      // Automatically auto-detect SIM 1 phone number if not yet set!
+      if (phone.isEmpty) {
+        _detectSim1Number(showFeedback: false);
+      }
     } catch (_) {}
+  }
+
+  Future<void> _detectSim1Number({bool showFeedback = false}) async {
+    try {
+      var status = await Permission.phone.status;
+      if (!status.isGranted) {
+        status = await Permission.phone.request();
+      }
+
+      if (status.isGranted) {
+        final String? simNumber =
+            await _simChannel.invokeMethod<String>('getSim1Number');
+        if (simNumber != null && simNumber.trim().isNotEmpty) {
+          final clean = simNumber.trim();
+          if (mounted) {
+            setState(() {
+              _phoneController.text = clean;
+            });
+          }
+          await _savePhone(clean);
+          if (mounted && showFeedback) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Auto-detected SIM 1: $clean')),
+            );
+          }
+          return;
+        }
+      }
+
+      if (mounted && showFeedback) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('SIM card has no stored phone number. You can enter it manually.'),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error auto-detecting SIM 1: $e');
+    }
   }
 
   Future<void> _saveName(String name) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('device_name', name.isEmpty ? 'My device' : name);
+    } catch (_) {}
+  }
+
+  Future<void> _savePhone(String phone) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('device_phone', phone.trim());
+    } catch (_) {}
+  }
+
+  Future<void> _saveCompany(String code) async {
+    final clean = code.trim().toUpperCase();
+    final finalCode = clean.isEmpty ? AppConfig.defaultCompanyCode : clean;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('company_code', finalCode);
     } catch (_) {}
   }
 
@@ -635,6 +723,8 @@ class _HomePageState extends State<HomePage>
     final ok = await _ensurePermission();
     if (!ok) return;
     await _saveName(_nameController.text.trim());
+    await _savePhone(_phoneController.text.trim());
+    await _saveCompany(_companyController.text.trim());
 
     try {
       final started = await _service.startService();
@@ -833,19 +923,65 @@ class _HomePageState extends State<HomePage>
                   : const SizedBox.shrink(),
             ),
 
+            // Company code field
+            TextField(
+              controller: _companyController,
+              enabled: !_tracking,
+              textCapitalization: TextCapitalization.characters,
+              style: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.8),
+              decoration: InputDecoration(
+                labelText: 'Company Code',
+                hintText: 'e.g. SWIFT or DEFAULT',
+                prefixIcon: const Icon(Icons.business_rounded),
+                helperText: 'Assigned by your company admin',
+                helperStyle: const TextStyle(fontSize: 11),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true, fillColor: cardBg,
+              ),
+              onChanged: _saveCompany,
+              onSubmitted: _saveCompany,
+            ),
+
+            const SizedBox(height: 12),
+
             // Device name field
             TextField(
               controller: _nameController,
               enabled: !_tracking,
               style: const TextStyle(fontWeight: FontWeight.w500),
               decoration: InputDecoration(
-                labelText: 'Device name',
-                hintText: "e.g. Dad's Phone",
-                prefixIcon: const Icon(Icons.phone_android_rounded),
+                labelText: 'Device name / Driver name',
+                hintText: "e.g. Rahul Sen, Van #4",
+                prefixIcon: const Icon(Icons.person_rounded),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true, fillColor: cardBg,
               ),
+              onChanged: _saveName,
               onSubmitted: _saveName,
+            ),
+
+            const SizedBox(height: 12),
+
+            // Mobile number field
+            TextField(
+              controller: _phoneController,
+              enabled: !_tracking,
+              keyboardType: TextInputType.phone,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+              decoration: InputDecoration(
+                labelText: 'Mobile number (SIM 1)',
+                hintText: 'e.g. +91 98765 43210',
+                prefixIcon: const Icon(Icons.phone_rounded),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.sim_card_rounded),
+                  tooltip: 'Auto-detect SIM 1 number',
+                  onPressed: !_tracking ? () => _detectSim1Number(showFeedback: true) : null,
+                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true, fillColor: cardBg,
+              ),
+              onChanged: _savePhone,
+              onSubmitted: _savePhone,
             ),
 
             const SizedBox(height: 14),
@@ -861,6 +997,15 @@ class _HomePageState extends State<HomePage>
               child: Column(children: [
                 _InfoRow(icon: Icons.fingerprint_rounded, label: 'Device ID',
                     value: _deviceId, subtleText: subtleText),
+                Divider(height: 14, color: cardBorder),
+                _InfoRow(icon: Icons.business_rounded, label: 'Company',
+                    value: _companyController.text.isNotEmpty ? _companyController.text : 'DEFAULT',
+                    subtleText: subtleText),
+                if (_phoneController.text.isNotEmpty) ...[
+                  Divider(height: 14, color: cardBorder),
+                  _InfoRow(icon: Icons.phone_rounded, label: 'Mobile No.',
+                      value: _phoneController.text, subtleText: subtleText),
+                ],
                 if (_lastLat != null) ...[
                   Divider(height: 14, color: cardBorder),
                   _InfoRow(icon: Icons.pin_drop_rounded, label: 'Last position',

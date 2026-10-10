@@ -47,7 +47,7 @@ jobs:
 
       - name: Generate native project scaffolding
         working-directory: app
-        run: flutter create . --platforms=android --project-name mobile_tracker
+        run: flutter create . --platforms=android --project-name mobiletracker --org com.surojitsen
 
       - name: Restore custom files
         working-directory: app
@@ -64,6 +64,21 @@ jobs:
       - name: Generate launcher icon
         working-directory: app
         run: dart run flutter_launcher_icons
+
+      - name: Set up Keystore
+        working-directory: app/android
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "Decoding upload keystore from repository secrets..."
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > upload-keystore.jks
+            cat <<EOF > key.properties
+storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+keyPassword=${{ secrets.KEY_PASSWORD }}
+keyAlias=${{ secrets.KEY_ALIAS }}
+storeFile=upload-keystore.jks
+EOF
+            python3 ../../.github/scripts/configure-signing.py .
+          fi
 
       - name: Build release APK
         working-directory: app

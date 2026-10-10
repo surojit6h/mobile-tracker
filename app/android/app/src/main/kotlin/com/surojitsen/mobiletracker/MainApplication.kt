@@ -1,4 +1,4 @@
-package com.example.mobile_tracker
+package com.surojitsen.mobiletracker
 
 import android.app.Application
 import android.app.NotificationChannel
